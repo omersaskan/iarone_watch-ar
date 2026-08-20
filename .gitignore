@@ -1,0 +1,19 @@
+# Vercel proje bağlantısı — paylaşılmamalı (Vercel'in kendi uyarısı)
+.vercel
+
+# Başka projeye (belgesem) ait, buraya dışarıdan girmiş varlıklar
+forklift.glb
+forklift.usdz
+forklift_belgesem.glb
+
+# Eyer (saddle) kayış varyantı: yanlış geometriydi, artık kullanılmıyor
+iarone-watch-ar.glb
+
+# yerel çıktılar
+shots/
+_usd/
+__pycache__/
+*.pyc
+
+# yalnizca yerel deploy icin
+.vercelignore

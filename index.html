@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="tr"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>IARONE · 3D & AR</title>
+<style>
+  :root{ --gold:#e0a98f; --gold-d:#c98d70; --bg:#0e0d0c; --card:#181615; --ink:#f4f0ec; --dim:#a9a19b; }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent }
+  html,body{ margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
+  .wrap{ max-width:960px; margin:0 auto; padding:0 18px 64px }
+  header{ padding:26px 0 12px; display:flex; align-items:baseline; gap:14px }
+  .brand{ letter-spacing:.30em; font-weight:600; color:var(--gold); font-size:15px }
+  .tag{ color:var(--dim); font-size:13px; letter-spacing:.04em }
+  .stage{ position:relative; border-radius:20px; overflow:hidden; background:
+      radial-gradient(120% 90% at 50% 8%, #2b2523 0%, #131211 62%, #0e0d0c 100%);
+      border:1px solid #262220; aspect-ratio:1/1; max-height:70vh }
+  @media(min-width:720px){ .stage{ aspect-ratio:4/3 } }
+  .stage canvas{ display:block; width:100%; height:100% }
+  .spin{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    color:var(--dim); font-size:13px; letter-spacing:.08em }
+  .hintbar{ position:absolute; left:0; right:0; bottom:10px; text-align:center;
+    font-size:12px; color:#8d8681; letter-spacing:.05em; pointer-events:none }
+  .cta{ display:grid; gap:10px; grid-template-columns:1fr; margin:18px 0 6px }
+  @media(min-width:620px){ .cta{ grid-template-columns:1fr 1fr } }
+  a.btn,button.btn{ display:flex; align-items:center; justify-content:center; gap:10px;
+    text-decoration:none; border:1px solid #2e2926; border-radius:14px; padding:16px 18px;
+    background:var(--card); color:var(--ink); font-weight:600; font-size:15px; cursor:pointer; }
+  a.btn.primary{ background:linear-gradient(180deg,var(--gold),var(--gold-d)); color:#2a1c16;
+    border-color:transparent }
+  a.btn:active,button.btn:active{ transform:translateY(1px) }
+  .sub{ color:var(--dim); font-weight:400; font-size:13px }
+  h2{ font-size:15px; letter-spacing:.14em; text-transform:uppercase; color:var(--gold);
+    margin:34px 0 12px; font-weight:600 }
+  table{ width:100%; border-collapse:collapse; font-size:14.5px }
+  td{ padding:10px 2px; border-bottom:1px solid #221e1c; vertical-align:top }
+  td:first-child{ color:var(--dim); width:44%; }
+  .files{ display:flex; flex-wrap:wrap; gap:9px; margin-top:8px }
+  .files a{ font-size:13.5px; color:var(--ink); text-decoration:none; border:1px solid #2e2926;
+    border-radius:999px; padding:8px 14px; background:#131110 }
+  .note{ color:var(--dim); font-size:13px; margin-top:12px }
+  code{ background:#1b1817; padding:2px 6px; border-radius:6px; font-size:12.5px }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="brand">IARONE</span>
+    <span class="tag">Mechanical · 40 mm · rose gold</span>
+  </header>
+
+  <div class="stage" id="stage">
+    <div class="spin" id="spin">yükleniyor…</div>
+    <div class="hintbar">sürükleyerek çevir · iki parmakla yakınlaştır</div>
+  </div>
+
+  <div class="cta">
+    <a class="btn primary" href="./ar.html" id="tryon">
+      Bilekte Dene <span class="sub" style="color:#4a3529">kamera</span>
+    </a>
+    <a class="btn" href="#" id="arbtn">
+      AR'de Gör <span class="sub" id="arsub">cihazına yerleştir</span>
+    </a>
+  </div>
+
+  <h2>Teknik</h2>
+  <table>
+    <tr><td>Kasa</td><td>Ø 40,0 mm · yükseklik 8,6 mm · kulak arası 45,9 mm</td></tr>
+    <tr><td>Kadran</td><td>Ø 35,1 mm siyah · 12 aplik indeks · 3'te tarih</td></tr>
+    <tr><td>Kayış</td><td>20 → 17 mm timsah kabartma · gül altın toka</td></tr>
+    <tr><td>Poligon</td><td>36.198 üçgen</td></tr>
+    <tr><td>Ölçek</td><td>gerçek dünya, metre · Y-yukarı</td></tr>
+    <tr><td>Malzeme</td><td>11 PBR materyali · 8 doku · 4,3 MB</td></tr>
+  </table>
+
+  <h2>Dosyalar</h2>
+  <div class="files">
+    <a href="./iarone-watch-v1.glb" download>GLB · model</a>
+    <a href="./iarone-watch.usdz" download>USDZ · iOS</a>
+  </div>
+  <p class="note">
+    <b>Bilekte Dene</b> kamerayı açar, elini bulur ve saati bileğine yerleştirir —
+    uygulama kurulumu yok. Kamera erişimi için sayfanın <code>https://</code> üzerinden
+    açılması gerekir (<code>localhost</code> da olur).<br>
+    <b>AR'de Gör</b> iPhone'da AR Quick Look, Android'de Scene Viewer açar; saat gerçek
+    boyutunda zemine yerleşir.
+  </p>
+</div>
+
+<script type="importmap">
+{ "imports": { "three":"./vendor/three/build/three.module.js",
+               "three/addons/":"./vendor/three/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(32, 1, 0.02, 6);
+
+function studio(){
+  const W=1024,H=512, cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const c=cv.getContext('2d');
+  const g=c.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#2f2d2c'); g.addColorStop(.42,'#46433f'); g.addColorStop(.47,'#6d6862');
+  g.addColorStop(.52,'#8c867f'); g.addColorStop(.60,'#2a2827'); g.addColorStop(1,'#151414');
+  c.fillStyle=g; c.fillRect(0,0,W,H);
+  const box=(cx,cy,w,h,v)=>{ const r=c.createRadialGradient(cx,cy,4,cx,cy,w);
+    r.addColorStop(0,`rgba(255,255,255,${v})`); r.addColorStop(.45,`rgba(255,255,255,${v*0.5})`);
+    r.addColorStop(1,'rgba(255,255,255,0)');
+    c.save(); c.translate(cx,cy); c.scale(1,h/w); c.translate(-cx,-cy);
+    c.fillStyle=r; c.fillRect(cx-w*1.5,cy-w*1.5,w*3,w*3); c.restore(); };
+  box(300,70,230,130,1.0); box(720,130,170,110,.6); box(120,250,120,60,.36);
+  c.fillStyle='rgba(255,255,255,1)'; c.fillRect(215,18,210,30);
+  c.fillStyle='rgba(255,255,255,.75)'; c.fillRect(640,70,150,18);
+  const t=new THREE.CanvasTexture(cv);
+  t.mapping=THREE.EquirectangularReflectionMapping; t.colorSpace=THREE.SRGBColorSpace; return t;
+}
+const pm=new THREE.PMREMGenerator(renderer);
+scene.environment=pm.fromEquirectangular(studio()).texture;
+scene.environmentIntensity=4.0;
+
+const controls=new OrbitControls(camera, renderer.domElement);
+controls.enableDamping=true; controls.dampingFactor=0.07;
+controls.enablePan=false; 
+controls.autoRotate=true; controls.autoRotateSpeed=0.9;
+renderer.domElement.addEventListener('pointerdown',()=>{controls.autoRotate=false});
+
+new GLTFLoader().load('./iarone-watch-v1.glb', g=>{
+  const root=g.scene;
+  const box=new THREE.Box3().setFromObject(root);
+  const c=box.getCenter(new THREE.Vector3());
+  root.position.sub(c);
+  scene.add(root);
+  const sz=box.getSize(new THREE.Vector3());
+  const fit=(Math.max(sz.x,sz.y,sz.z)/2)/Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*1.18;
+  const az=THREE.MathUtils.degToRad(-28), el=THREE.MathUtils.degToRad(30);
+  controls.target.set(0,0,0);
+  camera.position.set(fit*Math.sin(az)*Math.cos(el), fit*Math.sin(el), fit*Math.cos(az)*Math.cos(el));
+  controls.minDistance=fit*0.55; controls.maxDistance=fit*3.2;
+  controls.update();
+  document.getElementById('spin').remove();
+}, xhr=>{
+  const s=document.getElementById('spin');
+  if(s && xhr.total) s.textContent = Math.round(xhr.loaded/xhr.total*100)+'%';
+}, e=>{ document.getElementById('spin').textContent='model yüklenemedi'; });
+
+function resize(){
+  const w=stage.clientWidth, h=stage.clientHeight;
+  renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage); resize();
+(function tick(){ requestAnimationFrame(tick); controls.update(); renderer.render(scene,camera); })();
+window.__hero = (az, el, dist) => {
+  controls.autoRotate = false;
+  const r = dist || 0.085;
+  camera.position.set(r*Math.sin(az)*Math.cos(el), r*Math.sin(el), r*Math.cos(az)*Math.cos(el));
+  camera.lookAt(0,0,0); controls.update();
+  renderer.render(scene, camera);
+  return renderer.domElement.toDataURL('image/png');
+};
+
+// ---- native AR launch -----------------------------------------------------
+const ua=navigator.userAgent;
+const isIOS=/iPad|iPhone|iPod/.test(ua) || (ua.includes('Mac') && 'ontouchend' in document);
+const isAndroid=/Android/.test(ua);
+const arbtn=document.getElementById('arbtn'), arsub=document.getElementById('arsub');
+if(isIOS){
+  arbtn.setAttribute('rel','ar');
+  arbtn.href='./iarone-watch.usdz';
+  arbtn.innerHTML='AR’de Gör <span class="sub" style="color:#a9a19b">iPhone · Quick Look</span>';
+  const img=document.createElement('img'); img.style.display='none'; arbtn.appendChild(img);
+} else if(isAndroid){
+  const glb=location.origin+'./iarone-watch-v1.glb';
+  arbtn.href='intent://arvr.google.com/scene-viewer/1.0?file='+encodeURIComponent(glb)+
+    '&mode=ar_preferred&title=IARONE#Intent;scheme=https;package=com.google.ar.core;'+
+    'action=android.intent.action.VIEW;S.browser_fallback_url='+
+    encodeURIComponent(location.origin)+';end;';
+  arsub.textContent='Android · Scene Viewer';
+} else {
+  arbtn.href='./iarone-watch.usdz';
+  arbtn.setAttribute('download','');
+  arsub.textContent='masaüstü · USDZ indir';
+}
+</script>
+</body></html>

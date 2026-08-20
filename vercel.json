@@ -1,0 +1,58 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "headers": [
+    {
+      "source": "/(.*).wasm",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/wasm"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/(.*).glb",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "model/gltf-binary"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/(.*).usdz",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "model/vnd.usdz+zip"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/(.*).task",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/octet-stream"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    }
+  ]
+}
