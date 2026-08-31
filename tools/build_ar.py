@@ -1,78 +1,84 @@
 """Build the dedicated wrist-AR watch model.
 
-The presentation watch uses a buckle/free-end construction.  That geometry is not
-appropriate for live wrist AR: when pre-wrapped around a wrist it becomes a
-helical loop, enters the lugs at the wrong angle and can show buckle/keeper parts
-through the occlusion mask.
+The product/presentation watch needs a complete buckle and free-end assembly.
+Live wrist AR does not.  Geometry below the wrist is hidden by the depth
+occluder, and trying to model a complete pre-wrapped strap creates visible seams,
+loops and buckle parts at oblique camera angles.
 
-This builder keeps the watch head unchanged and replaces only the wear strap with
-two clean arms.  Each arm starts square on its spring bar, runs along the forearm
-and then bends below the wrist.  The hidden ends deliberately do not meet; the AR
-wrist occluder covers that region.  This gives the renderer one unambiguous strap
-surface per side and lets the runtime wrist-size deformer scale only leather.
+The AR asset therefore keeps the production watch head unchanged and uses two
+short leather stubs only.  Each stub:
+  * starts exactly at its spring bar,
+  * leaves the lug almost straight for the first few millimetres,
+  * bends smoothly down toward the side of the wrist,
+  * terminates early inside the region covered by the wrist occluder.
+
+There is no buckle, keeper or free end in this asset.  This is intentional: the
+AR occluder supplies the hidden continuation around the user's real wrist.
 """
 
 import numpy as np
 import build as b
 
 
-def _smooth_path(points, samples=96):
-    """Centripetal-ish Catmull-Rom resampling without adding a new dependency."""
-    p = np.asarray(points, dtype=float)
-    if len(p) < 4:
-        raise ValueError("need at least four path controls")
+# Build-frame millimetres.  +Y is 12 o'clock, -Y is 6 o'clock, +Z is the
+# dial normal.  The production spring bars sit at about Y=+/-20.6, Z=-2.1.
+LUG_Y = 20.40
+LUG_Z = -2.30
 
-    # Duplicate end points so the curve begins and ends exactly on the spring bars.
-    q = np.vstack([p[0], p, p[-1]])
-    out = []
-    spans = len(q) - 3
-    per = max(8, int(np.ceil(samples / spans)))
-    for i in range(spans):
-        p0, p1, p2, p3 = q[i:i + 4]
-        ts = np.linspace(0.0, 1.0, per, endpoint=(i == spans - 1))
-        for t in ts:
-            t2, t3 = t * t, t * t * t
-            v = 0.5 * (
-                (2.0 * p1)
-                + (-p0 + p2) * t
-                + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
-                + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3
-            )
-            out.append(v)
-    return np.asarray(out)
+# The remote end is only ~20 mm farther along the forearm and ~16 mm below the
+# lug.  That is enough to disappear behind the AR wrist occluder without making
+# the standalone GLB look like it has two long hanging blades.
+END_Y = 40.20
+END_Z = -18.00
+
+
+def _bezier4(p0, p1, p2, p3, samples=88):
+    """Sample one cubic Bezier curve including both exact endpoints."""
+    p0 = np.asarray(p0, dtype=float)
+    p1 = np.asarray(p1, dtype=float)
+    p2 = np.asarray(p2, dtype=float)
+    p3 = np.asarray(p3, dtype=float)
+    t = np.linspace(0.0, 1.0, samples)[:, None]
+    u = 1.0 - t
+    return (
+        (u ** 3) * p0
+        + 3.0 * (u ** 2) * t * p1
+        + 3.0 * u * (t ** 2) * p2
+        + (t ** 3) * p3
+    )
 
 
 def _arm_path(sign):
-    """One AR strap arm in the build frame (mm).
+    """Short, monotonic AR strap stub for one side of the watch.
 
-    +Y is 12 o'clock, -Y is 6 o'clock and +Z is the dial normal.  The first
-    segment is intentionally almost parallel to Y, so the leather enters the lug
-    square instead of immediately sweeping sideways around the wrist.
+    P0->P1 is parallel to the forearm axis, so leather enters the spring bar
+    square.  P2->P3 is mostly downward, so the far end turns behind the wrist
+    instead of continuing as a long visible strip.
     """
     s = float(sign)
-    controls = np.array([
-        [0.0, s * 20.40, -2.30],  # spring-bar centre
-        [0.0, s * 24.80, -2.65],  # straight lug exit
-        [0.0, s * 31.50, -4.40],
-        [0.0, s * 38.50, -8.50],
-        [0.0, s * 44.00, -14.80],
-        [0.0, s * 47.00, -22.50],
-        [0.0, s * 47.50, -31.00], # safely below the wrist mask
-    ])
-    return _smooth_path(controls, 112)
+    p0 = np.array([0.0, s * LUG_Y, LUG_Z])
+    p1 = np.array([0.0, s * 26.20, -2.45])   # ~5.8 mm straight lug exit
+    p2 = np.array([0.0, s * 38.70, -9.20])   # begin the real wrist-side bend
+    p3 = np.array([0.0, s * END_Y, END_Z])    # buried by the AR occluder
+    return _bezier4(p0, p1, p2, p3)
 
 
-def _band(path, w_lug=20.0, w_hidden=18.8, th_lug=2.60, th_hidden=2.35):
-    """Generate leather top + underside for one strap arm."""
+def _band(path, w_lug=20.0, w_hidden=19.35, th_lug=2.60, th_hidden=2.25):
+    """Generate leather top + suede underside for one short AR strap stub."""
     path = np.asarray(path, float)
     n = len(path)
     arc = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(path, axis=0), axis=1))]
+
     secs = []
+    vv = None
+    ntop = None
     for i in range(n):
         t = i / max(n - 1, 1)
-        # Keep the first 10 mm at full lug width, then taper very gently only in
-        # the hidden region.  No pointed free end is present in the AR asset.
-        k = t * t * (3.0 - 2.0 * t)
+
+        # Do not visibly taper at the lug.  Most taper happens after the first
+        # third, where the strap is already turning behind the wrist.
+        k = np.clip((t - 0.30) / 0.70, 0.0, 1.0)
+        k = k * k * (3.0 - 2.0 * k)
         w = w_lug + (w_hidden - w_lug) * k
         th = th_lug + (th_hidden - th_lug) * k
         sec, vv, ntop = b.strap_section(w, th)
@@ -100,13 +106,17 @@ def _band(path, w_lug=20.0, w_hidden=18.8, th_lug=2.60, th_hidden=2.35):
     top.F = top.F[:, ::-1]
     bot.F = bot.F[:, ::-1]
 
-    # Close only the exposed lug end.  The remote end is buried in the wrist
-    # occluder, so leaving it open avoids a visible cap flashing through the mask.
+    # Cap both ends so the GLB is also clean in a standalone viewer.  The far cap
+    # uses the suede/underside material and sits in the region hidden by the AR
+    # occluder during actual try-on.
     _, rt, upv = b.frames(path, False, fixed_right=fixed_right)
-    sec0 = np.asarray(secs[0], float)
-    ring0 = path[0] + sec0[:, 0:1] * rt[0] + sec0[:, 1:2] * upv[0]
-    cap0 = b.fan(ring0, reverse=False)
-    return top, b.merge([bot, cap0])
+    caps = []
+    for i, reverse in ((0, False), (n - 1, True)):
+        sec = np.asarray(secs[i], float)
+        ring = path[i] + sec[:, 0:1] * rt[i] + sec[:, 1:2] * upv[i]
+        caps.append(b.fan(ring, reverse=reverse))
+
+    return top, b.merge([bot, *caps])
 
 
 def straps_ar():
@@ -115,9 +125,8 @@ def straps_ar():
     t12, b12 = _band(p12)
     t6, b6 = _band(p6)
 
-    # Keep keys expected by build.py, but there is intentionally no buckle path in
-    # the AR asset.  The concatenated path is used only by the compatibility stubs
-    # below and never rendered.
+    # build.py expects these compatibility keys even though the dedicated AR asset
+    # intentionally has no real buckle path.
     dummy = np.vstack([p12, p6[::-1]])
     return {
         "top": b.merge([t12, t6]),
@@ -131,12 +140,7 @@ def straps_ar():
 
 
 def _hidden_triangle(*_args, **_kwargs):
-    """Compatibility primitive for buckle/keepers that build.py always requests.
-
-    One sub-millimetre triangle is placed inside the opaque case so the legacy
-    assembler can keep its primitive/material layout without rendering AR-only
-    buckle or keeper geometry.
-    """
+    """Compatibility placeholder for buckle/keepers requested by build.py."""
     v = np.array([
         [0.000, 0.000, -3.80],
         [0.001, 0.000, -3.80],
@@ -146,12 +150,26 @@ def _hidden_triangle(*_args, **_kwargs):
     return b.Mesh(v, f)
 
 
-# Patch only the wear-specific pieces; case, dial, hands, lugs, spring bars and
-# all materials/textures remain the proven production geometry from build.py.
+def _validate_paths():
+    """Fail the build if a future edit makes the AR stubs long/looping again."""
+    for sign in (+1, -1):
+        p = _arm_path(sign)
+        arc = np.sum(np.linalg.norm(np.diff(p, axis=0), axis=1))
+        if not 22.0 <= arc <= 32.0:
+            raise RuntimeError(f"AR strap arc length out of range: {arc:.2f} mm")
+        if abs(abs(p[0, 1]) - LUG_Y) > 0.05 or abs(p[0, 2] - LUG_Z) > 0.05:
+            raise RuntimeError("AR strap no longer starts on the spring bar")
+        if p[-1, 2] > -15.0:
+            raise RuntimeError("AR strap end is not deep enough for wrist occlusion")
+
+
+# Patch only wear-specific pieces.  Case, dial, hands, lugs, spring bars,
+# materials and textures remain the production geometry from build.py.
 b.straps = straps_ar
 b.buckle = _hidden_triangle
 b.keepers = _hidden_triangle
 
 
 if __name__ == "__main__":
+    _validate_paths()
     b.build("iarone_watch_ar.glb", wear=True)
