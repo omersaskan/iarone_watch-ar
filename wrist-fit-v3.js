@@ -1,12 +1,18 @@
 import * as THREE from 'three';
 
-// Skin ellipse used when the --wear model was authored.
+// Skin ellipse used when the AR model was authored.
 export const WRIST_BASE = {
   rx: 0.0285,
   ry: 0.0215,
   centreY: -0.0268,
   strapGap: 0.00135,
 };
+
+// Exported wear frame: +Y is dial/dorsal normal and +/-Z is the forearm axis.
+// The authored spring bars are at build Y=+/-20.4 mm -> exported Z=-/+20.4 mm.
+const STRAP_LUG_Z = 0.0204;
+const STRAP_PIN = 0.0080;
+const STRAP_BLEND_END = 0.0140;
 
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
@@ -20,9 +26,8 @@ function smooth01(t) {
 /**
  * Estimate the wrist cross-section from MediaPipe metric hand landmarks.
  * HandLandmarker has only one wrist point, not the two silhouette edges, so the
- * wrist cannot be measured directly. Palm width + wrist-to-MCP length are much
- * more stable than a single landmark and track hand/wrist size well enough for
- * try-on. Values are deliberately clamped to plausible adult/small-adult wrists.
+ * wrist cannot be measured directly. Palm width + wrist-to-MCP length are used
+ * as a stable anthropometric proxy and deliberately clamped to plausible wrists.
  */
 export function estimateWristRadii(world, IDX) {
   if (!world || world.length < 21) {
@@ -96,22 +101,22 @@ function isDeformableStrapMesh(mesh) {
   const names = materialNames(mesh.material);
   return names.some(name =>
     name === 'croc_leather' ||
-    name === 'strap_underside' ||
-    name === 'keeper_leather'
+    name === 'strap_underside'
   );
 }
 
 /**
- * Bind a non-destructive wrist-loop deformer to the loaded GLB.
+ * Bind a non-destructive wrist-fit deformer to the loaded AR GLB.
  *
- * Only leather primitives are allowed into the deformer. Earlier V3 code selected
- * every mesh by depth, which meant underside gold hardware could be resized around
- * the wrist as well. Keeping the case, lugs, buckle and other metal rigid removes
- * another source of the 'second model' look.
+ * Only leather primitives are deformable. Case, lugs, spring bars and all metal
+ * remain rigid. The deformation weight is measured from the spring-bar along the
+ * exported forearm axis rather than from dial depth:
+ *   0..8 mm from spring bar   -> 0% deformation
+ *   8..14 mm                  -> smooth 0..100% blend
+ *   beyond 14 mm              -> full wrist fit
  *
- * The case/lugs and the first millimetres of leather stay pinned. Only vertices
- * that descend around the wrist are progressively resized around the authored wrist
- * centre. That prevents a gap at the spring bars while fitting thin/thick wrists.
+ * This exactly preserves the authored lug connection while allowing only the
+ * hidden/downward strap portion to adapt to thin or thick wrists.
  */
 export function createWristLoopDeformer(root) {
   const targets = [];
@@ -127,9 +132,6 @@ export function createWristLoopDeformer(root) {
     });
   });
 
-  // GLTFLoader should expose the leather primitives as separate meshes because the
-  // source GLB uses separate materials. If that contract changes, do not silently
-  // deform the complete watch; fail safe by leaving geometry rigid.
   if (!targets.length) {
     console.warn('[IARONE] no leather strap meshes found for wrist deformation');
   }
@@ -159,11 +161,10 @@ export function createWristLoopDeformer(root) {
         const y0 = src[i + 1];
         const z0 = src[i + 2];
 
-        // Caseback reaches roughly -5.6 mm. Keep everything through -7 mm fixed,
-        // then blend to full wrist deformation by -16 mm. Strap attachment at the
-        // spring bars therefore remains exactly authored and cannot look detached.
-        const depthBelowDial = -y0;
-        const w = smooth01((depthBelowDial - 0.007) / 0.009);
+        // Exported +/-Z runs along the two strap arms. Use absolute forearm
+        // distance so the 12 and 6 sides get identical pinning.
+        const alongFromLug = Math.max(0, Math.abs(z0) - STRAP_LUG_Z);
+        const w = smooth01((alongFromLug - STRAP_PIN) / (STRAP_BLEND_END - STRAP_PIN));
         const fx = 1 + (sx - 1) * w;
         const fy = 1 + (sy - 1) * w;
 
