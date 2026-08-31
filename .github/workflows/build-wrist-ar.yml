@@ -88,6 +88,26 @@ jobs:
           shutil.copy('/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf', font_dir / 'times.ttf')
           PY
 
+      - name: Remove wear-strap overlap
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('tools/build.py')
+          s = p.read_text(encoding='utf-8')
+          old_buck = 'i_buck = int(n * (0.545 if P["wear_mode"] else 0.600))'
+          old_tip = 'i_tip = int(n * (0.660 if P["wear_mode"] else 0.720))'
+          if old_buck not in s or old_tip not in s:
+              raise RuntimeError('wear strap seam source changed; review AR seam patch')
+
+          # In wear mode the old ranges overlapped from 54.5% to 66% of the same
+          # wrist path, generating two physical leather shells in one location.
+          # Join both halves once at the underside (theta=pi) instead.
+          s = s.replace(old_buck, 'i_buck = int(n * (0.500 if P["wear_mode"] else 0.600))')
+          s = s.replace(old_tip, 'i_tip = int(n * (0.500 if P["wear_mode"] else 0.720))')
+          p.write_text(s, encoding='utf-8')
+          PY
+
       - name: Build wear-mode GLB
         run: |
           python tools/build.py --wear
