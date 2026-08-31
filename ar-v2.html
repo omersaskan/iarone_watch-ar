@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="tr"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>IARONE · Bilekte Dene</title>
+<style>
+  :root { --gold:#e0a98f; --ink:#141312; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:#0b0a0a; color:#f3efec;
+    font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; overflow:hidden; }
+  #stage { position:fixed; inset:0; overflow:hidden; }
+  #stage.mirror { transform:scaleX(-1); }
+  video,canvas#gl { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+  #ui { position:fixed; inset:0; pointer-events:none; display:flex; flex-direction:column;
+    justify-content:space-between; padding:max(14px,env(safe-area-inset-top)) 14px max(18px,env(safe-area-inset-bottom)); }
+  .bar { display:flex; gap:8px; align-items:center; pointer-events:auto; }
+  .bar.top { justify-content:space-between; }
+  .brand { font-size:13px; letter-spacing:.22em; font-weight:600; color:var(--gold); text-shadow:0 1px 6px #000b; }
+  button { pointer-events:auto; border:1px solid rgba(255,255,255,.16); border-radius:999px; padding:11px 17px;
+    font:inherit; font-size:14px; font-weight:600; background:rgba(20,19,18,.62); color:#f3efec;
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
+  button.primary { background:var(--gold); color:#241a15; border-color:transparent; }
+  button:active { transform:translateY(1px); }
+  #hint { align-self:center; text-align:center; background:rgba(20,19,18,.65); padding:9px 16px;
+    border-radius:999px; font-size:13.5px; max-width:88vw; pointer-events:none; transition:opacity .25s;
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
+  #gate { position:fixed; inset:0; z-index:5; display:flex; flex-direction:column; gap:18px; align-items:center;
+    justify-content:center; text-align:center; padding:28px; background:radial-gradient(120% 90% at 50% 15%,#2a2422 0%,#0b0a0a 70%); }
+  #gate h1 { font-size:23px; margin:0; font-weight:600; }
+  #gate .sub { opacity:.72; max-width:32ch; font-size:14px; margin:0; }
+  #gate .err { color:#ff9c8a; font-size:13px; max-width:38ch; }
+  #bottom { flex-direction:column; gap:12px; align-items:center; }
+  .row { display:flex; gap:8px; }
+  .chip { font-size:12px; opacity:.6; letter-spacing:.04em; }
+  #fit { position:fixed; left:0; right:0; bottom:0; z-index:4; pointer-events:auto; display:none;
+    background:rgba(16,15,14,.92); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
+    border-top:1px solid rgba(255,255,255,.12); padding:12px 14px max(14px,env(safe-area-inset-bottom)); }
+  #fit.on { display:block; }
+  #fit .r { display:grid; grid-template-columns:8.5em 1fr 4.2em; align-items:center; gap:10px; margin:7px 0; font-size:13px; }
+  #fit input[type=range] { width:100%; accent-color:var(--gold); }
+  #fit .v { text-align:right; font:12px ui-monospace,monospace; opacity:.8; }
+  #fit .foot { display:flex; gap:8px; margin-top:10px; }
+  #fit .foot button { flex:1; font-size:13px; padding:9px 12px; }
+  #fit code { display:block; margin-top:9px; font:11px ui-monospace,monospace; opacity:.65; word-break:break-all; }
+  #arDbg { position:fixed; left:8px; bottom:8px; z-index:6; display:none; white-space:pre;
+    font:11px/1.35 ui-monospace,monospace; color:#9ad; background:rgba(0,0,0,.5); padding:6px 8px; border-radius:8px; }
+</style>
+</head><body>
+<div id="stage"><video id="cam" playsinline muted autoplay></video><canvas id="gl"></canvas></div>
+<div id="ui">
+  <div class="bar top"><span class="brand">IARONE</span><div class="row"><button id="flip">⟳ Kamera</button></div></div>
+  <div id="hint">Bileğini kameraya göster</div>
+  <div class="bar" id="bottom"><div class="row"><button id="shot" class="primary">Fotoğraf</button><button id="calib">Ayar</button></div><span class="chip" id="fps"></span></div>
+</div>
+<div id="gate"><h1>IARONE · Bilekte Dene</h1><p class="sub">Saati bileğinde görmek için kamerayı başlat. Görüntü cihazından çıkmaz.</p><button id="start" class="primary">Kamerayı başlat</button><p class="err" id="gateErr"></p></div>
+<div id="fit">
+  <div class="r"><label>Kola doğru</label><input id="f_along" type="range" min="5" max="55" step="1"><span class="v" id="v_along"></span></div>
+  <div class="r"><label>Yükseklik</label><input id="f_out" type="range" min="20" max="34" step="0.2"><span class="v" id="v_out"></span></div>
+  <div class="r"><label>Bilek maskesi</label><input id="f_arm" type="range" min="0.85" max="1.08" step="0.01"><span class="v" id="v_arm"></span></div>
+  <div class="r"><label>Döndür</label><input id="f_roll" type="range" min="-45" max="45" step="1"><span class="v" id="v_roll"></span></div>
+  <div class="r"><label>Saat boyutu</label><input id="f_scale" type="range" min="0.85" max="1.18" step="0.01"><span class="v" id="v_scale"></span></div>
+  <div class="r" style="grid-template-columns:8.5em 1fr 1fr"><label>Yön</label><button id="f_flip" style="padding:7px 10px">Tarafı çevir</button><button id="f_rotate" style="padding:7px 10px">180° döndür</button></div>
+  <div class="foot"><button id="f_reset">Sıfırla</button><button id="f_copy">Değerleri kopyala</button><button id="f_close" class="primary">Bitti</button></div>
+  <code id="f_str"></code>
+</div>
+<div id="arDbg"></div>
+<script type="importmap">
+{ "imports": { "three":"./vendor/three/build/three.module.js", "three/addons/":"./vendor/three/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { HandLandmarker, FilesetResolver } from './vendor/tasks-vision/vision_bundle.mjs';
+import { wristPose, PoseFilter, DepthFilter, TrackingState, WristAnchor, FIT } from './wrist-v2.js';
+
+const q = new URLSearchParams(location.search);
+const DBG = q.get('dbg') === '1';
+const SHOWARM = q.get('arm') === '1';
+const MODEL_URL = q.get('m') || './iarone-watch-ar.glb';
+const STORE_KEY = 'iarone-fit-v2';
+
+const video = document.getElementById('cam');
+const canvas = document.getElementById('gl');
+const stage = document.getElementById('stage');
+const hint = document.getElementById('hint');
+const dbgEl = document.getElementById('arDbg');
+if (DBG) dbgEl.style.display = 'block';
+
+const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true, preserveDrawingBuffer:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(58, 1, 0.01, 6);
+
+function studioEnv() {
+  const W=512,H=256,cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const c=cv.getContext('2d');
+  const g=c.createLinearGradient(0,0,0,H); g.addColorStop(0,'#575450'); g.addColorStop(.46,'#8d8880'); g.addColorStop(.54,'#3a3836'); g.addColorStop(1,'#1a1918');
+  c.fillStyle=g; c.fillRect(0,0,W,H);
+  const key=c.createRadialGradient(150,46,4,150,46,110); key.addColorStop(0,'rgba(255,255,255,1)'); key.addColorStop(1,'rgba(255,255,255,0)'); c.fillStyle=key; c.fillRect(0,0,W,H);
+  const fill=c.createRadialGradient(360,76,4,360,76,92); fill.addColorStop(0,'rgba(255,255,255,.62)'); fill.addColorStop(1,'rgba(255,255,255,0)'); c.fillStyle=fill; c.fillRect(0,0,W,H);
+  const t=new THREE.CanvasTexture(cv); t.mapping=THREE.EquirectangularReflectionMapping; t.colorSpace=THREE.SRGBColorSpace; return t;
+}
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromEquirectangular(studioEnv()).texture;
+scene.environmentIntensity = 2.9;
+
+const rig = new THREE.Group(); scene.add(rig);
+
+// The occluder is intentionally local to the wrist instead of a 31 cm arm tube.
+// A long tube magnifies a small hand/forearm angle error and was visibly leaving
+// the real arm. The wear strap only needs depth around the watch itself.
+const occMat = SHOWARM
+  ? new THREE.MeshStandardMaterial({ color:0xc9a184, roughness:.85, metalness:0 })
+  : new THREE.MeshBasicMaterial({ colorWrite:false, depthWrite:true, depthTest:true });
+const occluder = new THREE.Mesh(new THREE.CylinderGeometry(1.08, .98, 1, 40, 1, false), occMat);
+occluder.renderOrder = -10;
+const occGroup = new THREE.Group(); occGroup.add(occluder); rig.add(occGroup);
+
+const armPivot = new THREE.Group();
+const watchHolder = new THREE.Group();
+armPivot.add(watchHolder); rig.add(armPivot);
+
+let watch = null;
+const mats = [];
+new GLTFLoader().load(MODEL_URL, g => {
+  watch = g.scene;
+  watch.traverse(o => {
+    if (!o.isMesh) return;
+    o.renderOrder = 1;
+    o.frustumCulled = false;
+    o.material = o.material.clone();
+    mats.push({ m:o.material, transparent:o.material.transparent, opacity:o.material.opacity });
+  });
+  watchHolder.add(watch);
+  applyFit();
+}, undefined, e => {
+  hint.textContent = 'Bilek modeli yüklenemedi';
+  hint.style.opacity = '1';
+  console.error(e);
+});
+
+let curOpacity = 1;
+function setWatchOpacity(v) {
+  if (Math.abs(v-curOpacity) < .01) return;
+  curOpacity = v;
+  for (const e of mats) {
+    if (v >= .999) { e.m.transparent=e.transparent; e.m.opacity=e.opacity; }
+    else { e.m.transparent=true; e.m.opacity=e.opacity*v; }
+    e.m.needsUpdate = true;
+  }
+}
+
+const filter = new PoseFilter({ minCutoff:1.0, beta:60.0, dCutoff:1.0 });
+const depthFilter = new DepthFilter(.25);
+const anchor = new WristAnchor();
+const tracking = new TrackingState(12);
+const poseOpts = { anchor, depthFilter, flipSide:false, rotate180:false };
+let wasLost = true;
+function resetTracking() { filter.reset(); depthFilter.reset(); anchor.reset(); tracking.reset(); wasLost=true; }
+
+// --wear geometry is built around rx=28.5 mm / rz=21.5 mm. The 1 mm inset is
+// deliberate: tracking error must not let the invisible skin volume slice the
+// leather near the lugs, which creates the 'two separate models' look.
+const ARM = { across:.0285, thick:.0215, hand:.060, elbow:.090, inset:.0010 };
+const DEF = { along:30, out:26.8, arm:1.00, roll:0, scale:1.00, flip:false, rotate180:false };
+let CAL = { ...DEF };
+try { Object.assign(CAL, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); } catch(e) {}
+
+function applyFit() {
+  poseOpts.flipSide = !!CAL.flip;
+  poseOpts.rotate180 = !!CAL.rotate180;
+  FIT.alongForearm = CAL.along/1000;
+  FIT.outOfWrist = CAL.out/1000;
+
+  // Wear-model local -Z points toward the hand, +Z toward the elbow.
+  // The rig origin is the case centre, so the wrist centre is -along on local Z.
+  armPivot.position.set(0, -FIT.outOfWrist, -FIT.alongForearm);
+  armPivot.rotation.set(0, 0, THREE.MathUtils.degToRad(CAL.roll));
+  watchHolder.position.set(0, FIT.outOfWrist, FIT.alongForearm);
+  if (watch) watch.scale.setScalar(CAL.scale);
+
+  const across = Math.max(.018, ARM.across*CAL.arm - ARM.inset);
+  const thick = Math.max(.014, ARM.thick*CAL.arm - ARM.inset);
+  const len = ARM.hand + ARM.elbow;
+  occGroup.position.set(0, -FIT.outOfWrist, -FIT.alongForearm);
+  // Cylinder axis is local Y. rotX(+90) maps it to local +Z (forearm axis).
+  occluder.rotation.set(Math.PI/2, 0, 0);
+  occluder.scale.set(across, len, thick);
+  occluder.position.set(0, 0, (ARM.elbow - ARM.hand)/2);
+}
+applyFit();
+
+let stream = null, facing='user';
+async function openCamera(mode) {
+  if (stream) stream.getTracks().forEach(t=>t.stop());
+  stream = await navigator.mediaDevices.getUserMedia({ audio:false, video:{ facingMode:{ideal:mode}, width:{ideal:1280}, height:{ideal:720} } });
+  video.srcObject = stream; await video.play(); facing=mode; stage.classList.toggle('mirror', mode==='user');
+}
+
+let landmarker = null;
+async function initTracker() {
+  const fileset = await FilesetResolver.forVisionTasks('./vendor/tasks-vision/wasm');
+  landmarker = await HandLandmarker.createFromOptions(fileset, {
+    baseOptions:{ modelAssetPath:'./models/hand_landmarker.task', delegate:'GPU' },
+    runningMode:'VIDEO', numHands:1,
+    minHandDetectionConfidence:.55, minHandPresenceConfidence:.55, minTrackingConfidence:.55,
+  });
+}
+
+function resize() { const w=stage.clientWidth,h=stage.clientHeight; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+addEventListener('resize',resize); resize();
+function fitVideoCrop() {
+  const vw=video.videoWidth,vh=video.videoHeight,cw=stage.clientWidth,ch=stage.clientHeight;
+  if (!vw || !vh) return {sx:1,sy:1,ox:0,oy:0};
+  const scale=Math.max(cw/vw,ch/vh),dw=vw*scale,dh=vh*scale;
+  return { sx:dw/cw, sy:dh/ch, ox:(dw-cw)/2/dw, oy:(dh-ch)/2/dh };
+}
+function mapLandmarks(lm) { const c=fitVideoCrop(); return lm.map(p=>({x:(p.x-c.ox)*c.sx,y:(p.y-c.oy)*c.sy,z:p.z})); }
+
+let running=false,lastVideoTime=-1,frames=0,t0=performance.now();
+function loop() {
+  if (!running) return;
+  requestAnimationFrame(loop);
+  let measured=null,fresh=false,info='';
+  if (landmarker && video.readyState>=2 && video.currentTime!==lastVideoTime) {
+    lastVideoTime=video.currentTime; fresh=true;
+    const res=landmarker.detectForVideo(video,performance.now());
+    const hands=res.handednesses || res.handedness || [];
+    if (res.landmarks?.length && res.worldLandmarks?.length) {
+      const cat=hands[0]?.[0]?.categoryName || 'Right';
+      measured=wristPose(mapLandmarks(res.landmarks[0]),res.worldLandmarks[0],cat==='Right',camera,stage.clientWidth,stage.clientHeight,poseOpts);
+      info=cat+(measured?' d='+measured.depth.toFixed(2)+'m':' (poz yok)');
+    } else info='el yok';
+  }
+
+  let sm=filter.p ? {position:filter.p,quaternion:filter.q} : null;
+  if (fresh) {
+    sm=filter.push(measured);
+    const st=tracking.update(!!measured);
+    if (st.lost) { if (!wasLost) resetTracking(); sm=null; }
+    else { wasLost=false; setWatchOpacity(st.opacity); }
+  }
+
+  if (sm) {
+    rig.position.copy(sm.position); rig.quaternion.copy(sm.quaternion); rig.visible=true;
+    if (measured && !measured.dorsalToCam) { hint.textContent='Elinin sırtını kameraya çevir'; hint.style.opacity='1'; }
+    else hint.style.opacity='0';
+  } else {
+    rig.visible=false; setWatchOpacity(1); hint.textContent='Bileğini kameraya göster'; hint.style.opacity='1';
+  }
+  renderer.render(scene,camera);
+  frames++;
+  if (frames%20===0) {
+    const el=(performance.now()-t0)/1000; document.getElementById('fps').textContent=(frames/el).toFixed(0)+' fps';
+    if (DBG) dbgEl.textContent=info+'\n'+(sm?'p '+sm.position.toArray().map(v=>v.toFixed(3)).join(' '):'yok');
+  }
+}
+
+document.getElementById('start').onclick=async()=>{
+  const err=document.getElementById('gateErr'); err.textContent='';
+  try { await openCamera(facing); await initTracker(); document.getElementById('gate').remove(); running=true; t0=performance.now(); frames=0; loop(); }
+  catch(e) { err.textContent='Kamera açılamadı: '+(e?.message||e)+' — HTTPS üzerinden açılması gerekir.'; }
+};
+document.getElementById('flip').onclick=async()=>{ resetTracking(); try { await openCamera(facing==='user'?'environment':'user'); } catch(e) {} };
+
+document.getElementById('shot').onclick=()=>{
+  const w=stage.clientWidth,h=stage.clientHeight,out=document.createElement('canvas'); out.width=w*2; out.height=h*2;
+  const c=out.getContext('2d');
+  if (facing==='user') { c.translate(out.width,0); c.scale(-1,1); }
+  const vw=video.videoWidth,vh=video.videoHeight;
+  if (vw) { const s=Math.max(out.width/vw,out.height/vh); c.drawImage(video,(out.width-vw*s)/2,(out.height-vh*s)/2,vw*s,vh*s); }
+  c.drawImage(renderer.domElement,0,0,out.width,out.height);
+  out.toBlob(b=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='iarone-bilek.png'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000); },'image/png');
+};
+
+const fitPanel=document.getElementById('fit');
+const SL={along:'f_along',out:'f_out',arm:'f_arm',roll:'f_roll',scale:'f_scale'};
+const UNIT={along:' mm',out:' mm',arm:'×',roll:'°',scale:'×'};
+function fitString(){ return `along=${CAL.along} out=${CAL.out} arm=${CAL.arm} roll=${CAL.roll} scale=${CAL.scale} flip=${CAL.flip?1:0} rotate180=${CAL.rotate180?1:0}`; }
+function syncPanel(){ for(const k in SL){ document.getElementById(SL[k]).value=CAL[k]; document.getElementById('v_'+k).textContent=CAL[k]+UNIT[k]; } document.getElementById('f_str').textContent=fitString(); }
+function saveFit(){ try { localStorage.setItem(STORE_KEY,JSON.stringify(CAL)); } catch(e) {} }
+for(const k in SL) document.getElementById(SL[k]).addEventListener('input',ev=>{ CAL[k]=parseFloat(ev.target.value); applyFit(); syncPanel(); saveFit(); });
+document.getElementById('f_flip').onclick=()=>{ CAL.flip=!CAL.flip; applyFit(); syncPanel(); resetTracking(); saveFit(); };
+document.getElementById('f_rotate').onclick=()=>{ CAL.rotate180=!CAL.rotate180; applyFit(); syncPanel(); resetTracking(); saveFit(); };
+document.getElementById('f_reset').onclick=()=>{ CAL={...DEF}; applyFit(); syncPanel(); resetTracking(); saveFit(); };
+document.getElementById('f_copy').onclick=async()=>{ const t=fitString(); try { await navigator.clipboard.writeText(t); hint.textContent='Kopyalandı'; } catch(e){ hint.textContent=t; } hint.style.opacity='1'; setTimeout(()=>hint.style.opacity='0',1800); };
+document.getElementById('f_close').onclick=()=>fitPanel.classList.remove('on');
+document.getElementById('calib').onclick=()=>fitPanel.classList.toggle('on');
+syncPanel();
+</script>
+</body></html>
