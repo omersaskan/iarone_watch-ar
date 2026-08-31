@@ -4,526 +4,68 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>IARONE · Bilekte Dene</title>
 <style>
-  :root { --gold:#e0a98f; --ink:#141312; }
+  :root { --gold:#e0a98f; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body { margin:0; height:100%; background:#0b0a0a; color:#f3efec;
-              font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
-              overflow:hidden; }
+    font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; overflow:hidden; }
   #stage { position:fixed; inset:0; overflow:hidden; }
   #stage.mirror { transform:scaleX(-1); }
-  video, canvas#gl { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+  video,canvas#gl { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
   #ui { position:fixed; inset:0; pointer-events:none; display:flex; flex-direction:column;
-        justify-content:space-between; padding:max(14px,env(safe-area-inset-top)) 14px
-        max(18px,env(safe-area-inset-bottom)); }
+    justify-content:space-between; padding:max(14px,env(safe-area-inset-top)) 14px max(18px,env(safe-area-inset-bottom)); }
   .bar { display:flex; gap:8px; align-items:center; pointer-events:auto; }
   .bar.top { justify-content:space-between; }
-  .brand { font-size:13px; letter-spacing:.22em; font-weight:600; color:var(--gold);
-           text-shadow:0 1px 6px rgba(0,0,0,.7); }
-  button { pointer-events:auto; border:0; border-radius:999px; padding:11px 17px; font:inherit;
-           font-size:14px; font-weight:600; background:rgba(20,19,18,.62); color:#f3efec;
-           backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
-           border:1px solid rgba(255,255,255,.16); }
+  .brand { font-size:13px; letter-spacing:.22em; font-weight:600; color:var(--gold); text-shadow:0 1px 6px #000b; }
+  button { pointer-events:auto; border:1px solid rgba(255,255,255,.16); border-radius:999px; padding:11px 17px;
+    font:inherit; font-size:14px; font-weight:600; background:rgba(20,19,18,.62); color:#f3efec;
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
   button.primary { background:var(--gold); color:#241a15; border-color:transparent; }
   button:active { transform:translateY(1px); }
-  #hint { align-self:center; text-align:center; background:rgba(20,19,18,.6);
-          backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); padding:9px 16px;
-          border-radius:999px; font-size:13.5px; max-width:88vw; pointer-events:none;
-          transition:opacity .25s; }
-  #gate { position:fixed; inset:0; display:flex; flex-direction:column; gap:18px;
-          align-items:center; justify-content:center; text-align:center; padding:28px;
-          background:radial-gradient(120% 90% at 50% 15%,#2a2422 0%,#0b0a0a 70%); z-index:5; }
-  #gate h1 { font-size:23px; margin:0; letter-spacing:.02em; font-weight:600; }
+  #hint { align-self:center; text-align:center; background:rgba(20,19,18,.65); padding:9px 16px;
+    border-radius:999px; font-size:13.5px; max-width:88vw; pointer-events:none; transition:opacity .25s;
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
+  #gate { position:fixed; inset:0; z-index:5; display:flex; flex-direction:column; gap:18px; align-items:center;
+    justify-content:center; text-align:center; padding:28px; background:radial-gradient(120% 90% at 50% 15%,#2a2422 0%,#0b0a0a 70%); }
+  #gate h1 { font-size:23px; margin:0; font-weight:600; }
   #gate .sub { opacity:.72; max-width:32ch; font-size:14px; margin:0; }
-  #gate .err { color:#ff9c8a; font-size:13px; max-width:36ch; }
+  #gate .err { color:#ff9c8a; font-size:13px; max-width:38ch; }
   #bottom { flex-direction:column; gap:12px; align-items:center; }
   .row { display:flex; gap:8px; }
-  .chip { font-size:12px; opacity:.6; letter-spacing:.04em; }
-  #fit { position:fixed; left:0; right:0; bottom:0; z-index:4; pointer-events:auto;
-         background:rgba(16,15,14,.90); backdrop-filter:blur(18px);
-         -webkit-backdrop-filter:blur(18px); border-top:1px solid rgba(255,255,255,.12);
-         padding:12px 14px max(14px,env(safe-area-inset-bottom)); display:none; }
-  #fit.on { display:block }
-  #fit .r { display:grid; grid-template-columns:8.5em 1fr 4.2em; align-items:center;
-            gap:10px; margin:7px 0; font-size:13px }
-  #fit input[type=range]{ width:100%; accent-color:var(--gold) }
-  #fit .v { text-align:right; font:12px ui-monospace,monospace; opacity:.8 }
-  #fit .foot { display:flex; gap:8px; margin-top:10px }
-  #fit .foot button { flex:1; font-size:13px; padding:9px 12px }
-  #fit code { display:block; margin-top:9px; font:11px ui-monospace,monospace;
-              opacity:.65; word-break:break-all }
-  #arDbg { position:fixed; left:8px; bottom:8px; font:11px/1.35 ui-monospace,monospace;
-         color:#9ad; background:rgba(0,0,0,.5); padding:6px 8px; border-radius:8px;
-         white-space:pre; display:none; z-index:6; }
+  .chip { font-size:12px; opacity:.65; letter-spacing:.04em; }
+  #fit { position:fixed; left:0; right:0; bottom:0; z-index:4; pointer-events:auto; display:none;
+    background:rgba(16,15,14,.92); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
+    border-top:1px solid rgba(255,255,255,.12); padding:12px 14px max(14px,env(safe-area-inset-bottom)); }
+  #fit.on { display:block; }
+  #fit .r { display:grid; grid-template-columns:8.5em 1fr 4.2em; align-items:center; gap:10px; margin:7px 0; font-size:13px; }
+  #fit input[type=range] { width:100%; accent-color:var(--gold); }
+  #fit .v { text-align:right; font:12px ui-monospace,monospace; opacity:.8; }
+  #fit .foot { display:flex; gap:8px; margin-top:10px; }
+  #fit .foot button { flex:1; font-size:13px; padding:9px 12px; }
+  #fit code { display:block; margin-top:9px; font:11px ui-monospace,monospace; opacity:.65; word-break:break-all; }
+  #arDbg { position:fixed; left:8px; bottom:8px; z-index:6; display:none; white-space:pre;
+    font:11px/1.35 ui-monospace,monospace; color:#9ad; background:rgba(0,0,0,.55); padding:6px 8px; border-radius:8px; }
 </style>
-</head>
-<body>
-
-<div id="stage">
-  <video id="cam" playsinline muted autoplay></video>
-  <canvas id="gl"></canvas>
-</div>
-
+</head><body>
+<div id="stage"><video id="cam" playsinline muted autoplay></video><canvas id="gl"></canvas></div>
 <div id="ui">
-  <div class="bar top">
-    <span class="brand">IARONE</span>
-    <div class="row">
-      <button id="flip" title="Kamera değiştir">⟳ Kamera</button>
-    </div>
-  </div>
+  <div class="bar top"><span class="brand">IARONE</span><div class="row"><button id="flip">⟳ Kamera</button></div></div>
   <div id="hint">Bileğini kameraya göster</div>
-  <div class="bar" id="bottom">
-    <div class="row">
-      <button id="shot" class="primary">Fotoğraf</button>
-      <button id="calib">Ayar</button>
-    </div>
-    <span class="chip" id="fps"></span>
-  </div>
+  <div class="bar" id="bottom"><div class="row"><button id="shot" class="primary">Fotoğraf</button><button id="calib">Ayar</button></div><span class="chip" id="fps"></span></div>
 </div>
-
-<div id="gate">
-  <h1>IARONE · Bilekte Dene</h1>
-  <p class="sub">Saati bileğinde görmek için kamerayı başlat. Görüntü cihazından çıkmaz.</p>
-  <button id="start" class="primary">Kamerayı başlat</button>
-  <p class="err" id="gateErr"></p>
-</div>
-
+<div id="gate"><h1>IARONE · Bilekte Dene</h1><p class="sub">Saati bileğinde görmek için kamerayı başlat. Görüntü cihazından çıkmaz.</p><button id="start" class="primary">Kamerayı başlat</button><p class="err" id="gateErr"></p></div>
 <div id="fit">
-  <div class="r"><label>Kola doğru</label><input id="f_along" type="range" min="-10" max="70" step="1"><span class="v" id="v_along"></span></div>
-  <div class="r"><label>Yükseklik</label><input id="f_out" type="range" min="14" max="42" step="0.2"><span class="v" id="v_out"></span></div>
-  <div class="r"><label>Bilek çevresi</label><input id="f_arm" type="range" min="0.72" max="1.40" step="0.01"><span class="v" id="v_arm"></span></div>
-  <div class="r"><label>Döndür</label><input id="f_roll" type="range" min="-60" max="60" step="1"><span class="v" id="v_roll"></span></div>
-  <div class="r"><label>Saat boyutu</label><input id="f_scale" type="range" min="0.80" max="1.25" step="0.01"><span class="v" id="v_scale"></span></div>
-  <div class="r" style="grid-template-columns:8.5em 1fr 1fr"><label>Yön</label>
-    <button id="f_flip" style="padding:7px 10px">Tarafı çevir</button>
-    <button id="f_crown" style="padding:7px 10px">Kurma kolu yönü</button></div>
-  <div class="foot">
-    <button id="f_reset">Sıfırla</button>
-    <button id="f_copy">Değerleri kopyala</button>
-    <button id="f_close" class="primary">Bitti</button>
-  </div>
+  <div class="r"><label>Kola doğru</label><input id="f_along" type="range" min="5" max="55" step="1"><span class="v" id="v_along"></span></div>
+  <div class="r"><label>Yükseklik</label><input id="f_out" type="range" min="20" max="34" step="0.2"><span class="v" id="v_out"></span></div>
+  <div class="r"><label>Bilek düzeltme</label><input id="f_arm" type="range" min="0.85" max="1.15" step="0.01"><span class="v" id="v_arm"></span></div>
+  <div class="r"><label>Döndür</label><input id="f_roll" type="range" min="-45" max="45" step="1"><span class="v" id="v_roll"></span></div>
+  <div class="r"><label>Saat boyutu</label><input id="f_scale" type="range" min="0.85" max="1.18" step="0.01"><span class="v" id="v_scale"></span></div>
+  <div class="r" style="grid-template-columns:8.5em 1fr 1fr"><label>Yön</label><button id="f_flip" style="padding:7px 10px">Tarafı çevir</button><button id="f_rotate" style="padding:7px 10px">180° döndür</button></div>
+  <div class="foot"><button id="f_reset">Sıfırla</button><button id="f_copy">Değerleri kopyala</button><button id="f_close" class="primary">Bitti</button></div>
   <code id="f_str"></code>
 </div>
-
 <div id="arDbg"></div>
-
 <script type="importmap">
-{ "imports": { "three":"./vendor/three/build/three.module.js",
-               "three/addons/":"./vendor/three/examples/jsm/" } }
+{ "imports": { "three":"./vendor/three/build/three.module.js", "three/addons/":"./vendor/three/examples/jsm/" } }
 </script>
-<script type="module">
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { HandLandmarker, FilesetResolver } from './vendor/tasks-vision/vision_bundle.mjs';
-import { wristPose, PoseFilter, DepthFilter, TrackingState, WristAnchor,
-         FIT, demoHand } from './wrist.js';
-
-const q = new URLSearchParams(location.search);
-const DEMO = q.get('demo') === '1';
-const DBG = q.get('dbg') === '1';
-const MODEL_URL = q.get('m') || './iarone-watch-v1.glb';
-
-const video = document.getElementById('cam');
-const canvas = document.getElementById('gl');
-const stage = document.getElementById('stage');
-const hint = document.getElementById('hint');
-const dbgEl = document.getElementById('arDbg');
-if (DBG) dbgEl.style.display = 'block';
-
-// ---------------------------------------------------------------- three.js
-const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true, preserveDrawingBuffer:true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.toneMapping = THREE.NeutralToneMapping;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(58, 1, 0.01, 6);
-
-// studio environment so the gold reads as metal over any camera feed
-function studioEnv() {
-  const W = 512, H = 256;
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const c = cv.getContext('2d');
-  const g = c.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#575450'); g.addColorStop(.46, '#8d8880');
-  g.addColorStop(.54, '#3a3836'); g.addColorStop(1, '#1a1918');
-  c.fillStyle = g; c.fillRect(0, 0, W, H);
-  const key = c.createRadialGradient(150, 46, 4, 150, 46, 110);
-  key.addColorStop(0, 'rgba(255,255,255,1)'); key.addColorStop(1, 'rgba(255,255,255,0)');
-  c.fillStyle = key; c.fillRect(0, 0, W, H);
-  const fill = c.createRadialGradient(360, 76, 4, 360, 76, 92);
-  fill.addColorStop(0, 'rgba(255,255,255,.62)'); fill.addColorStop(1, 'rgba(255,255,255,0)');
-  c.fillStyle = fill; c.fillRect(0, 0, W, H);
-  c.fillStyle = 'rgba(255,255,255,.95)'; c.fillRect(110, 12, 105, 15);
-  const t = new THREE.CanvasTexture(cv);
-  t.mapping = THREE.EquirectangularReflectionMapping;
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromEquirectangular(studioEnv()).texture;
-scene.environmentIntensity = 2.9;
-
-// the watch, parented to a rig we drive from the wrist pose
-const rig = new THREE.Group();
-scene.add(rig);
-
-// forearm occluder: writes depth only, so the far side of the strap is hidden
-const SHOWARM = q.get('arm') === '1';
-const occMat = SHOWARM
-  ? new THREE.MeshStandardMaterial({ color:0xc9a184, roughness:0.85, metalness:0.0 })
-  : new THREE.MeshBasicMaterial({ colorWrite:false });
-const occluder = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.10, 1, 32, 1, true), occMat);
-const occCap = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 18), occMat);
-const occGroup = new THREE.Group();
-occGroup.add(occluder, occCap);
-occluder.renderOrder = -10; occCap.renderOrder = -10;
-rig.add(occGroup);
-
-// The rig origin is the dial plane.  Put a pivot at the wrist centre so the
-// "roll" control spins the watch AROUND the forearm instead of around its dial.
-const armPivot = new THREE.Group();
-const watchHolder = new THREE.Group();
-armPivot.add(watchHolder);
-rig.add(armPivot);
-
-let watch = null;
-const loader = new GLTFLoader();
-const mats = [];
-loader.load(MODEL_URL, g => {
-  watch = g.scene;
-  watch.traverse(o => {
-    if (!o.isMesh) return;
-    o.renderOrder = 1;
-    o.frustumCulled = false;
-    // clone so the fade cannot leak across instances; keep the authored blend
-    // state and only force transparency while actually fading, otherwise the
-    // watch would sit in the transparent pass for no reason
-    o.material = o.material.clone();
-    mats.push({ m: o.material, transparent: o.material.transparent, opacity: o.material.opacity });
-  });
-  watchHolder.add(watch);
-  applyFit();
-}, undefined, e => { hint.textContent = 'Model yüklenemedi: ' + e; });
-
-let curOpacity = 1;
-function setWatchOpacity(v) {
-  if (Math.abs(v - curOpacity) < 0.01) return;
-  curOpacity = v;
-  for (const e of mats) {
-    if (v >= 0.999) { e.m.transparent = e.transparent; e.m.opacity = e.opacity; }
-    else { e.m.transparent = true; e.m.opacity = e.opacity * v; }
-    e.m.needsUpdate = true;
-  }
-}
-
-// wrist geometry, in the watch model frame (dial normal +Y, 12 o-clock -Z, loop axis +X)
-// In the rig frame: +Y = out of the back of the wrist, -Z = toward the fingers,
-// so the forearm runs along Z with the hand at -Z.
-const filter = new PoseFilter({ minCutoff: 1.0, beta: 60.0, dCutoff: 1.0 });
-const depthFilter = new DepthFilter(0.25);
-const anchor = new WristAnchor();
-const tracking = new TrackingState(12);
-const poseOpts = { anchor, depthFilter, flipSide: false, crownToElbow: false };
-let wasLost = true;
-function resetTracking() {
-  filter.reset(); depthFilter.reset(); anchor.reset(); tracking.reset();
-}
-
-// Rig frame: +X = forearm (hand at +X), +Y = out of the back of the wrist.
-// The forearm passes THROUGH the strap loop, so the occluder runs along X and its
-// cross-section is the wrist oval: half-width across the wrist and half thickness
-// back-to-front.
-const ARM = { across: 0.0285, thick: 0.0215, hand: 0.052, elbow: 0.26 };
-const DEF = { along: 30, out: 26.8, arm: 1.00, roll: 0, scale: 1.00, flip: false, crownElbow: false };
-let CAL = Object.assign({}, DEF);
-try { Object.assign(CAL, JSON.parse(localStorage.getItem('iarone-fit') || '{}')); } catch (e) {}
-
-function applyFit() {
-  poseOpts.flipSide = !!CAL.flip;
-  poseOpts.crownToElbow = !!CAL.crownElbow;
-  FIT.alongForearm = CAL.along / 1000;
-  FIT.outOfWrist = CAL.out / 1000;
-  armPivot.position.set(0, -FIT.outOfWrist, 0);
-  armPivot.rotation.set(THREE.MathUtils.degToRad(CAL.roll), 0, 0);  // spin about the forearm (X)
-  watchHolder.position.set(0, FIT.outOfWrist, 0);
-  if (watch) watch.scale.setScalar(CAL.scale);
-
-  const across = ARM.across * CAL.arm, thick = ARM.thick * CAL.arm;
-  occGroup.position.set(0, -FIT.outOfWrist, 0);
-  const len = ARM.hand + ARM.elbow;
-  // scale is applied before the rotation: (X radius, height, Z radius);
-  // rotZ(90) sends the cylinder axis Y -> X, its X radius -> Y, Z radius stays Z
-  occluder.scale.set(thick, len, across);
-  occluder.rotation.set(0, 0, Math.PI / 2);
-  occluder.position.set((ARM.hand - ARM.elbow) / 2, 0, 0);
-  occCap.scale.set(thick, thick, across);
-  occCap.position.set(ARM.hand, 0, 0);
-}
-applyFit();
-
-// ---------------------------------------------------------------- camera feed
-let stream = null, facing = 'user';
-async function openCamera(mode) {
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  stream = await navigator.mediaDevices.getUserMedia({
-    audio:false,
-    video:{ facingMode:{ ideal:mode }, width:{ ideal:1280 }, height:{ ideal:720 } },
-  });
-  video.srcObject = stream;
-  await video.play();
-  facing = mode;
-  stage.classList.toggle('mirror', mode === 'user');
-}
-
-// ---------------------------------------------------------------- tracking
-let landmarker = null;
-async function initTracker() {
-  const fileset = await FilesetResolver.forVisionTasks('./vendor/tasks-vision/wasm');
-  landmarker = await HandLandmarker.createFromOptions(fileset, {
-    baseOptions: { modelAssetPath: './models/hand_landmarker.task', delegate: 'GPU' },
-    runningMode: 'VIDEO',
-    numHands: 1,
-    minHandDetectionConfidence: 0.55,
-    minHandPresenceConfidence: 0.55,
-    minTrackingConfidence: 0.55,
-  });
-}
-
-let lastVideoTime = -1, frames = 0, t0 = performance.now();
-
-function resize() {
-  const w = stage.clientWidth, h = stage.clientHeight;
-  renderer.setSize(w, h, false);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-}
-addEventListener('resize', resize);
-resize();
-
-function fitVideoCrop() {
-  // the video is object-fit:cover, so landmark coords must be mapped through the crop
-  const vw = video.videoWidth, vh = video.videoHeight;
-  const cw = stage.clientWidth, ch = stage.clientHeight;
-  if (!vw || !vh) return { sx:1, sy:1, ox:0, oy:0 };
-  const scale = Math.max(cw / vw, ch / vh);
-  const dw = vw * scale, dh = vh * scale;
-  return { sx: dw / cw, sy: dh / ch, ox: (dw - cw) / 2 / dw, oy: (dh - ch) / 2 / dh };
-}
-
-function mapLandmarks(lm) {
-  const c = fitVideoCrop();
-  return lm.map(p => ({ x: (p.x - c.ox) * c.sx, y: (p.y - c.oy) * c.sy, z: p.z }));
-}
-
-let running = false;
-function loop() {
-  if (!running) return;
-  requestAnimationFrame(loop);
-
-  let measured = null, fresh = false, info = '';
-  if (DEMO) {
-    const t = (performance.now() - t0) / 1000;
-    const d = demoHand(t, q.get('hand') !== 'left', q.get('palm') === '1',
-                       camera, 0.30, q.get('pose') || 'default');
-    measured = wristPose(d.lm, d.world, q.get('hand') !== 'left', camera,
-                         stage.clientWidth, stage.clientHeight, poseOpts);
-    fresh = true;
-    info = 'demo';
-  } else if (landmarker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
-    lastVideoTime = video.currentTime;
-    fresh = true;
-    const res = landmarker.detectForVideo(video, performance.now());
-    const hands = res.handednesses || res.handedness || [];
-    if (res.landmarks && res.landmarks.length && res.worldLandmarks && res.worldLandmarks.length) {
-      const cat = hands[0] && hands[0][0] ? hands[0][0].categoryName : 'Right';
-      measured = wristPose(mapLandmarks(res.landmarks[0]), res.worldLandmarks[0],
-                           cat === 'Right', camera, stage.clientWidth, stage.clientHeight, poseOpts);
-      info = cat + (measured ? ' d=' + measured.depth.toFixed(2) + 'm' : ' (poz yok)');
-    } else {
-      info = 'el yok';
-    }
-  }
-
-  // only advance the filters on a genuinely new measurement, otherwise the
-  // 1-euro state would be integrated repeatedly on repeated video frames
-  let sm = filter.p ? { position: filter.p, quaternion: filter.q } : null;
-  if (fresh) {
-    sm = filter.push(measured);
-    const st = tracking.update(!!measured);
-    if (st.lost) {
-      if (!wasLost) { resetTracking(); wasLost = true; }
-      sm = null;
-    } else {
-      wasLost = false;
-      setWatchOpacity(st.opacity);
-    }
-  }
-
-  if (sm) {
-    rig.position.copy(sm.position);
-    rig.quaternion.copy(sm.quaternion);
-    rig.visible = true;
-    hint.style.opacity = '0';
-  } else {
-    rig.visible = false;
-    setWatchOpacity(1);
-    hint.style.opacity = '1';
-  }
-
-  renderer.render(scene, camera);
-
-  frames++;
-  if (frames % 20 === 0) {
-    const el = (performance.now() - t0) / 1000;
-    document.getElementById('fps').textContent = (frames / el).toFixed(0) + ' fps';
-    if (DBG) dbgEl.textContent = info + '\n' + (sm ? 'p ' + sm.position.toArray().map(v => v.toFixed(3)).join(' ') : 'yok');
-  }
-}
-
-// ---------------------------------------------------------------- UI
-document.getElementById('start').onclick = async () => {
-  const gate = document.getElementById('gate');
-  const err = document.getElementById('gateErr');
-  err.textContent = '';
-  try {
-    if (!DEMO) {
-      await openCamera(facing);
-      await initTracker();
-    }
-    gate.remove();
-    running = true;
-    t0 = performance.now(); frames = 0;
-    loop();
-  } catch (e) {
-    err.textContent = 'Kamera açılamadı: ' + (e && e.message ? e.message : e) +
-      ' — sayfanın https:// üzerinden açılması gerekir.';
-  }
-};
-
-document.getElementById('flip').onclick = async () => {
-  resetTracking();
-  try { await openCamera(facing === 'user' ? 'environment' : 'user'); } catch (e) {}
-};
-
-document.getElementById('shot').onclick = () => {
-  const w = stage.clientWidth, h = stage.clientHeight;
-  const out = document.createElement('canvas');
-  out.width = w * 2; out.height = h * 2;
-  const c = out.getContext('2d');
-  if (facing === 'user') { c.translate(out.width, 0); c.scale(-1, 1); }
-  const vw = video.videoWidth, vh = video.videoHeight;
-  if (vw) {
-    const s = Math.max(out.width / vw, out.height / vh);
-    c.drawImage(video, (out.width - vw * s) / 2, (out.height - vh * s) / 2, vw * s, vh * s);
-  }
-  c.drawImage(renderer.domElement, 0, 0, out.width, out.height);
-  out.toBlob(b => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(b);
-    a.download = 'iarone-bilek.png';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  }, 'image/png');
-};
-
-const fitPanel = document.getElementById('fit');
-const SL = { along:'f_along', out:'f_out', arm:'f_arm', roll:'f_roll', scale:'f_scale' };
-const UNIT = { along:' mm', out:' mm', arm:'×', roll:'°', scale:'×' };
-
-function fitString() {
-  return `along=${CAL.along} out=${CAL.out} arm=${CAL.arm} roll=${CAL.roll} scale=${CAL.scale} flip=${CAL.flip ? 1 : 0} crown=${CAL.crownElbow ? 'dirsek' : 'el'}`;
-}
-function syncPanel() {
-  for (const k in SL) {
-    document.getElementById(SL[k]).value = CAL[k];
-    document.getElementById('v_' + k).textContent =
-      (typeof CAL[k] === 'number' ? CAL[k] : 0) + UNIT[k];
-  }
-  document.getElementById('f_str').textContent = fitString();
-}
-for (const k in SL) {
-  document.getElementById(SL[k]).addEventListener('input', ev => {
-    CAL[k] = parseFloat(ev.target.value);
-    applyFit();
-    syncPanel();
-    try { localStorage.setItem('iarone-fit', JSON.stringify(CAL)); } catch (e) {}
-  });
-}
-document.getElementById('f_flip').onclick = () => {
-  CAL.flip = !CAL.flip;
-  applyFit(); syncPanel(); resetTracking();
-  hint.textContent = CAL.flip ? 'Taraf çevrildi' : 'Taraf normal';
-  hint.style.opacity = '1';
-  setTimeout(() => { hint.style.opacity = '0'; }, 1600);
-  try { localStorage.setItem('iarone-fit', JSON.stringify(CAL)); } catch (e) {}
-};
-document.getElementById('f_crown').onclick = () => {
-  CAL.crownElbow = !CAL.crownElbow;
-  applyFit(); syncPanel(); resetTracking();
-  hint.textContent = 'Kurma kolu: ' + (CAL.crownElbow ? 'dirsek tarafı' : 'el tarafı');
-  hint.style.opacity = '1';
-  setTimeout(() => { hint.style.opacity = '0'; }, 1600);
-  try { localStorage.setItem('iarone-fit', JSON.stringify(CAL)); } catch (e) {}
-};
-document.getElementById('f_reset').onclick = () => {
-  CAL = Object.assign({}, DEF); applyFit(); syncPanel();
-  try { localStorage.setItem('iarone-fit', JSON.stringify(CAL)); } catch (e) {}
-};
-document.getElementById('f_copy').onclick = async () => {
-  const t = fitString();
-  try { await navigator.clipboard.writeText(t); hint.textContent = 'Kopyalandı: ' + t; }
-  catch (e) { hint.textContent = t; }
-  hint.style.opacity = '1';
-  setTimeout(() => { hint.style.opacity = '0'; }, 3200);
-};
-document.getElementById('f_close').onclick = () => fitPanel.classList.remove('on');
-document.getElementById('calib').onclick = () => fitPanel.classList.toggle('on');
-syncPanel();
-
-if (DEMO) {
-  document.getElementById('gate').remove();
-  running = true; loop();
-}
-
-// --- headless hooks: the preview pane throttles rAF, so allow manual stepping
-window.__step = (t, opts = {}) => {
-  running = false;
-  resetTracking();
-  setWatchOpacity(1);
-  applyFit();
-  // opts.palm === true puts the palm toward the camera; the default is the back
-  // of the hand, which is the side a watch is actually worn on
-  const d = demoHand(t, opts.right !== false, opts.palm === true, camera,
-                     opts.dist || 0.30, opts.pose || 'default');
-  const pose = wristPose(d.lm, d.world, opts.right !== false, camera,
-                         stage.clientWidth, stage.clientHeight, poseOpts);
-  const sm = filter.push(pose);
-  if (sm) { rig.position.copy(sm.position); rig.quaternion.copy(sm.quaternion); rig.visible = true; }
-  else rig.visible = false;
-  renderer.render(scene, camera);
-  return sm ? { p: sm.position.toArray(), depth: pose.depth, hand: pose.handW } : null;
-};
-window.__save = async (name) => {
-  const w = stage.clientWidth, h = stage.clientHeight;
-  const out = document.createElement('canvas');
-  out.width = w; out.height = h;
-  const c = out.getContext('2d');
-  c.fillStyle = '#8b8377'; c.fillRect(0, 0, w, h);
-  if (video.videoWidth) {
-    const s = Math.max(w / video.videoWidth, h / video.videoHeight);
-    c.drawImage(video, (w - video.videoWidth * s) / 2, (h - video.videoHeight * s) / 2,
-                video.videoWidth * s, video.videoHeight * s);
-  }
-  c.drawImage(renderer.domElement, 0, 0, w, h);
-  await fetch('/save', { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ name, data: out.toDataURL('image/png') }) });
-  return 'ok';
-};
-window.__setSize = (w, h) => {
-  stage.style.width = w + 'px'; stage.style.height = h + 'px';
-  document.body.style.width = w + 'px'; document.body.style.height = h + 'px';
-  resize();
-};
-window.__arReady = true;
-</script>
+<script type="module" src="./ar-runtime-v3.js?v=3"></script>
 </body></html>
