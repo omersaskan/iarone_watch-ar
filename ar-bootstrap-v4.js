@@ -2,8 +2,9 @@
 // Preserve an explicit ?m= override for debugging/custom models.
 const u = new URL(location.href);
 if (!u.searchParams.has('m')) {
-  u.searchParams.set('m', './iarone-watch-ar.glb?v=wear4');
+  u.searchParams.set('m', './iarone-watch-ar.glb?v=wear5');
   history.replaceState(null, '', u);
 }
 
-await import('./ar-runtime-v3.js?v=6');
+// Runtime is versioned too so the final spring-bar pinning logic is reloaded.
+await import('./ar-runtime-v3.js?v=7');
