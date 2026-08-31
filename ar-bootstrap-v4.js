@@ -1,8 +1,8 @@
-// Ensure the rebuilt wear GLB is not shadowed by the previous one-year immutable cache.
+// Ensure the rebuilt AR GLB is not shadowed by the one-year immutable model cache.
 // Preserve an explicit ?m= override for debugging/custom models.
 const u = new URL(location.href);
 if (!u.searchParams.has('m')) {
-  u.searchParams.set('m', './iarone-watch-ar.glb?v=wear3');
+  u.searchParams.set('m', './iarone-watch-ar.glb?v=wear4');
   history.replaceState(null, '', u);
 }
 
