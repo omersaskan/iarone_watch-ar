@@ -58,7 +58,6 @@ jobs:
                   return Image.open(io.BytesIO(raw)).convert('RGB')
               raise KeyError(name)
 
-          # Recover the clean monogram mask from the already-shipped dial texture.
           dial = embedded('dial').convert('L')
           a = np.asarray(dial)
           h, w = a.shape
@@ -79,15 +78,11 @@ jobs:
           xx0, xx1 = max(0, xs.min()-pad), min(clean.shape[1], xs.max()+pad+1)
           Image.fromarray(clean[yy0:yy1, xx0:xx1]).save('logo_clean.png')
 
-          # tools/tex.py expects a historical ref.png crop for the caseback. Recreate
-          # that exact crop from the movement texture already embedded in the GLB.
           movement = embedded('movement').resize((216, 216), Image.Resampling.LANCZOS)
           ref = Image.new('RGB', (1024, 1024), (18, 18, 18))
           ref.paste(movement, (668, 750))
           ref.save('ref.png')
 
-          # tex.py carries the original Windows font path; provide the same serif
-          # role on Linux without modifying the model source.
           font_dir = Path('C:/Windows/Fonts')
           font_dir.mkdir(parents=True, exist_ok=True)
           shutil.copy('/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf', font_dir / 'times.ttf')
@@ -102,7 +97,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add iarone-watch-ar.glb
+          git add -f iarone-watch-ar.glb
           if git diff --cached --quiet; then
             echo "wear model unchanged"
             exit 0
