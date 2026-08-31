@@ -1,6 +1,16 @@
 {
   "version": 2,
   "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/ar",
+      "destination": "/ar-v2.html"
+    },
+    {
+      "source": "/ar.html",
+      "destination": "/ar-v2.html"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*).wasm",
