@@ -20,7 +20,7 @@ function smooth01(t) {
 /**
  * Estimate the wrist cross-section from MediaPipe metric hand landmarks.
  * HandLandmarker has only one wrist point, not the two silhouette edges, so the
- * wrist cannot be measured directly.  Palm width + wrist-to-MCP length are much
+ * wrist cannot be measured directly. Palm width + wrist-to-MCP length are much
  * more stable than a single landmark and track hand/wrist size well enough for
  * try-on. Values are deliberately clamped to plausible adult/small-adult wrists.
  */
@@ -43,14 +43,9 @@ export function estimateWristRadii(world, IDX) {
     return { rx: WRIST_BASE.rx, ry: WRIST_BASE.ry, confidence: 0 };
   }
 
-  // Empirical anthropometric proxy.  Using both dimensions prevents a foreshortened
-  // or slightly bad MCP span from making the virtual wrist suddenly too thin.
   const sizeProxy = 0.5 * (palmWidth + palmLength);
-  const wristAcross = clamp(sizeProxy * 0.75, 0.046, 0.074); // full width, metres
+  const wristAcross = clamp(sizeProxy * 0.75, 0.046, 0.074);
   const rx = wristAcross * 0.5;
-
-  // Real wrists are flatter than circles. Keep the same ellipse ratio as the
-  // authored wear model, with independent bounds to avoid pathological masks.
   const ry = clamp(rx * (WRIST_BASE.ry / WRIST_BASE.rx), 0.0170, 0.0280);
 
   const confidence = clamp(
@@ -92,20 +87,38 @@ export class WristSizeFilter {
   }
 }
 
+function materialNames(material) {
+  if (Array.isArray(material)) return material.map(m => m?.name || '');
+  return [material?.name || ''];
+}
+
+function isDeformableStrapMesh(mesh) {
+  const names = materialNames(mesh.material);
+  return names.some(name =>
+    name === 'croc_leather' ||
+    name === 'strap_underside' ||
+    name === 'keeper_leather'
+  );
+}
+
 /**
  * Bind a non-destructive wrist-loop deformer to the loaded GLB.
  *
- * Critical detail: the case/lugs and the first millimetres of leather stay pinned.
- * Only vertices that descend around the wrist are progressively resized around the
- * authored wrist centre. That prevents the leather from opening a gap at the spring
- * bars while still letting the loop fit a thin or thick wrist.
+ * Only leather primitives are allowed into the deformer. Earlier V3 code selected
+ * every mesh by depth, which meant underside gold hardware could be resized around
+ * the wrist as well. Keeping the case, lugs, buckle and other metal rigid removes
+ * another source of the 'second model' look.
+ *
+ * The case/lugs and the first millimetres of leather stay pinned. Only vertices
+ * that descend around the wrist are progressively resized around the authored wrist
+ * centre. That prevents a gap at the spring bars while fitting thin/thick wrists.
  */
 export function createWristLoopDeformer(root) {
   const targets = [];
 
   root.traverse(o => {
     const attr = o?.geometry?.attributes?.position;
-    if (!o.isMesh || !attr || !attr.array) return;
+    if (!o.isMesh || !attr || !attr.array || !isDeformableStrapMesh(o)) return;
     o.frustumCulled = false;
     targets.push({
       mesh: o,
@@ -114,6 +127,13 @@ export function createWristLoopDeformer(root) {
     });
   });
 
+  // GLTFLoader should expose the leather primitives as separate meshes because the
+  // source GLB uses separate materials. If that contract changes, do not silently
+  // deform the complete watch; fail safe by leaving geometry rigid.
+  if (!targets.length) {
+    console.warn('[IARONE] no leather strap meshes found for wrist deformation');
+  }
+
   let lastRx = null;
   let lastRy = null;
 
@@ -121,8 +141,6 @@ export function createWristLoopDeformer(root) {
     rx = clamp(rx, 0.022, 0.037);
     ry = clamp(ry, 0.0165, 0.0285);
 
-    // Updating 40k triangles every camera frame is unnecessary. Human wrist size
-    // changes slowly; ~0.35 mm hysteresis removes shimmer and saves mobile CPU.
     if (!force && lastRx != null &&
         Math.abs(rx - lastRx) < 0.00035 && Math.abs(ry - lastRy) < 0.00035) {
       return false;
@@ -154,9 +172,9 @@ export function createWristLoopDeformer(root) {
         a[i + 2] = z0;
       }
       t.attr.needsUpdate = true;
-      // Size updates are sparse, so recomputing normals here is cheaper than
-      // carrying a custom shader and keeps leather lighting coherent.
       t.mesh.geometry.computeVertexNormals();
+      t.mesh.geometry.computeBoundingBox();
+      t.mesh.geometry.computeBoundingSphere();
     }
     return true;
   }
@@ -168,8 +186,10 @@ export function createWristLoopDeformer(root) {
       t.attr.array.set(t.original);
       t.attr.needsUpdate = true;
       t.mesh.geometry.computeVertexNormals();
+      t.mesh.geometry.computeBoundingBox();
+      t.mesh.geometry.computeBoundingSphere();
     }
   }
 
-  return { setRadii, reset };
+  return { setRadii, reset, targetCount: targets.length };
 }
