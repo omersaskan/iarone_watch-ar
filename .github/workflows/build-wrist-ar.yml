@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -103,4 +105,10 @@ jobs:
             exit 0
           fi
           git commit -m "build: regenerate wrist AR model"
-          git push origin HEAD:${GITHUB_REF_NAME}
+
+          # Other AR/runtime commits can land while this relatively slow model build
+          # is running. Rebase the generated binary commit onto the newest branch
+          # head instead of rejecting it as a non-fast-forward push.
+          git fetch origin "${GITHUB_REF_NAME}"
+          git rebase "origin/${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
