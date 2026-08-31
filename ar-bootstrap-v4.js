@@ -2,8 +2,8 @@
 // Preserve an explicit ?m= override for debugging/custom models.
 const u = new URL(location.href);
 if (!u.searchParams.has('m')) {
-  u.searchParams.set('m', './iarone-watch-ar.glb?v=wear2');
+  u.searchParams.set('m', './iarone-watch-ar.glb?v=wear3');
   history.replaceState(null, '', u);
 }
 
-await import('./ar-runtime-v3.js?v=5');
+await import('./ar-runtime-v3.js?v=6');
