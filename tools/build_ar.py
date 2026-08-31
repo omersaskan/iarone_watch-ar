@@ -1,10 +1,14 @@
 """Build the dedicated wrist-AR watch model.
 
 The presentation watch needs a complete buckle/free-end assembly; live wrist AR
-does not.  The AR asset keeps the production watch head unchanged and uses only
-two short leather stubs.  Each stub starts exactly on its spring bar, exits the
-lug straight, bends naturally toward the wrist side and terminates inside the
-depth-occluded region.  Buckle, keepers and free end are intentionally absent.
+does not.  The AR asset keeps the production watch head unchanged and uses two
+independent leather wrap arms.  Each arm starts exactly on its spring bar, exits
+the lug straight, follows the visible side of the wrist, then continues deep
+behind the wrist where the depth occluder hides its end.
+
+The arms intentionally do not meet and there is no rendered buckle, keeper or
+free end.  Unlike the earlier short-stub version, however, the straps are long
+enough that their cut ends cannot appear in the normal top/oblique try-on view.
 """
 
 import numpy as np
@@ -16,21 +20,22 @@ import build as b
 LUG_Y = 20.40
 LUG_Z = -2.30
 
-# Final AR strap spec v2.
-END_Y = 38.00
-END_Z = -17.50
+# AR visual-wrap spec.  The remote end is deliberately below the authored wrist
+# centre after export, so the depth occluder hides the physical termination.
+END_Y = 41.00
+END_Z = -31.50
 LUG_EXIT_Y = 26.40       # 6.0 mm almost-straight spring-bar exit
-BEND_Y = 35.00
-BEND_Z = -7.00
+BEND_Y = 39.00
+BEND_Z = -11.00
 
 W_LUG = 20.00
 W_END = 19.20
 TH_LUG = 2.60
 TH_END = 2.15
-TH_TIP = 1.85            # only the final hidden 10% softens to this value
+TH_TIP = 1.90            # hidden tip only; avoids a thick square flash
 
 
-def _bezier4(p0, p1, p2, p3, samples=88):
+def _bezier4(p0, p1, p2, p3, samples=112):
     """Sample one cubic Bezier curve including both exact endpoints."""
     p0 = np.asarray(p0, dtype=float)
     p1 = np.asarray(p1, dtype=float)
@@ -47,11 +52,11 @@ def _bezier4(p0, p1, p2, p3, samples=88):
 
 
 def _arm_path(sign):
-    """One monotonic AR strap stub.
+    """One monotonic AR strap arm that disappears behind the real wrist.
 
-    P0->P1 gives a 6 mm square lug exit.  P1->P2 introduces the bend gradually;
-    P2->P3 turns down into the wrist occluder instead of continuing as a visible
-    half-loop.  The 6-side is the exact Y mirror of the 12-side.
+    P0->P1 keeps the spring-bar connection rigid and square. P1->P2 begins the
+    natural side bend. P2->P3 turns steeply behind the wrist instead of ending in
+    visible space. The 6-side is the exact Y mirror of the 12-side.
     """
     s = float(sign)
     p0 = np.array([0.0, s * LUG_Y, LUG_Z])
@@ -62,7 +67,7 @@ def _arm_path(sign):
 
 
 def _band(path):
-    """Generate croc-leather top + suede underside for one AR strap stub."""
+    """Generate croc-leather top + suede underside for one AR wrap arm."""
     path = np.asarray(path, float)
     n = len(path)
     arc = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(path, axis=0), axis=1))]
@@ -73,15 +78,16 @@ def _band(path):
     for i in range(n):
         t = i / max(n - 1, 1)
 
-        # First 30% remains full lug width/thickness.  The visible strap then
-        # tapers almost imperceptibly.  Only the final hidden 10% gets a small
-        # thickness softening so a cap cannot read like a square cut block.
-        k = np.clip((t - 0.30) / 0.70, 0.0, 1.0)
+        # Keep the visible lug/upper-wrist region essentially production width.
+        # Taper is postponed until the arm is already turning out of view.
+        k = np.clip((t - 0.38) / 0.62, 0.0, 1.0)
         k = k * k * (3.0 - 2.0 * k)
         w = W_LUG + (W_END - W_LUG) * k
         th = TH_LUG + (TH_END - TH_LUG) * k
 
-        tip = np.clip((t - 0.90) / 0.10, 0.0, 1.0)
+        # Only the last hidden 12% softens slightly. This is not a visible pointed
+        # free end; it merely makes any sub-pixel cap flash less block-like.
+        tip = np.clip((t - 0.88) / 0.12, 0.0, 1.0)
         tip = tip * tip * (3.0 - 2.0 * tip)
         th += (TH_TIP - TH_END) * tip
 
@@ -110,9 +116,8 @@ def _band(path):
     top.F = top.F[:, ::-1]
     bot.F = bot.F[:, ::-1]
 
-    # Keep the mesh watertight for standalone inspection.  The far cap uses the
-    # underside material and is authored deep enough to be hidden by the AR wrist
-    # occluder during try-on.
+    # Keep the mesh watertight for standalone inspection. The remote cap is deep
+    # inside the occluded wrist volume during actual try-on.
     _, rt, upv = b.frames(path, False, fixed_right=fixed_right)
     caps = []
     for i, reverse in ((0, False), (n - 1, True)):
@@ -154,18 +159,18 @@ def _hidden_triangle(*_args, **_kwargs):
 
 
 def _validate_paths():
-    """Reject regressions back to long/looping or detached AR straps."""
+    """Reject detached, short-stub or accidental full-loop regressions."""
     for sign in (+1, -1):
         p = _arm_path(sign)
         arc = np.sum(np.linalg.norm(np.diff(p, axis=0), axis=1))
-        if not 20.0 <= arc <= 28.0:
-            raise RuntimeError(f"AR strap arc length out of final-spec range: {arc:.2f} mm")
+        if not 34.0 <= arc <= 44.0:
+            raise RuntimeError(f"AR strap arc length out of wrap range: {arc:.2f} mm")
         if abs(abs(p[0, 1]) - LUG_Y) > 0.05 or abs(p[0, 2] - LUG_Z) > 0.05:
             raise RuntimeError("AR strap no longer starts on the spring bar")
         if abs(abs(p[-1, 1]) - END_Y) > 0.05 or abs(p[-1, 2] - END_Z) > 0.05:
-            raise RuntimeError("AR strap end no longer matches final occlusion target")
-        if p[-1, 2] > -15.0:
-            raise RuntimeError("AR strap end is not deep enough for wrist occlusion")
+            raise RuntimeError("AR strap end no longer matches hidden wrap target")
+        if p[-1, 2] > -28.0:
+            raise RuntimeError("AR strap end is not deep enough to disappear behind wrist")
 
 
 # Patch only wear-specific pieces. Case, dial, hands, lugs, spring bars,
