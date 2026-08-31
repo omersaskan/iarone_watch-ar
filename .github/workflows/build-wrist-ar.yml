@@ -1,0 +1,114 @@
+name: Build wrist AR model
+
+on:
+  push:
+    paths:
+      - "tools/**"
+      - ".github/workflows/build-wrist-ar.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install model build dependencies
+        run: python -m pip install --upgrade numpy pillow opencv-python-headless
+
+      - name: Bootstrap excluded source assets from shipped GLB
+        run: |
+          python - <<'PY'
+          import io, json, shutil, struct
+          from pathlib import Path
+          import cv2
+          import numpy as np
+          from PIL import Image
+
+          data = Path('iarone-watch-v1.glb').read_bytes()
+          pos = 12
+          doc = None
+          binary = None
+          while pos + 8 <= len(data):
+              n, kind = struct.unpack_from('<I4s', data, pos)
+              pos += 8
+              chunk = data[pos:pos+n]
+              pos += n
+              if kind == b'JSON':
+                  doc = json.loads(chunk.rstrip(b'\x00 ').decode('utf-8'))
+              elif kind in (b'BIN\x00', b'BIN '):
+                  binary = chunk
+          if doc is None or binary is None:
+              raise RuntimeError('invalid source GLB')
+
+          def embedded(name):
+              for im in doc.get('images', []):
+                  if im.get('name') != name or 'bufferView' not in im:
+                      continue
+                  bv = doc['bufferViews'][im['bufferView']]
+                  off = bv.get('byteOffset', 0)
+                  raw = binary[off:off + bv['byteLength']]
+                  return Image.open(io.BytesIO(raw)).convert('RGB')
+              raise KeyError(name)
+
+          dial = embedded('dial').convert('L')
+          a = np.asarray(dial)
+          h, w = a.shape
+          y0, y1 = int(h * .23), int(h * .37)
+          x0, x1 = int(w * .38), int(w * .62)
+          crop = a[y0:y1, x0:x1]
+          mask = (crop > 42).astype(np.uint8) * 255
+          n, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+          clean = np.zeros_like(mask)
+          for i in range(1, n):
+              if stats[i, cv2.CC_STAT_AREA] >= 18:
+                  clean[labels == i] = 255
+          ys, xs = np.nonzero(clean)
+          if not len(xs):
+              raise RuntimeError('could not recover logo mask from dial texture')
+          pad = 8
+          yy0, yy1 = max(0, ys.min()-pad), min(clean.shape[0], ys.max()+pad+1)
+          xx0, xx1 = max(0, xs.min()-pad), min(clean.shape[1], xs.max()+pad+1)
+          Image.fromarray(clean[yy0:yy1, xx0:xx1]).save('logo_clean.png')
+
+          movement = embedded('movement').resize((216, 216), Image.Resampling.LANCZOS)
+          ref = Image.new('RGB', (1024, 1024), (18, 18, 18))
+          ref.paste(movement, (668, 750))
+          ref.save('ref.png')
+
+          font_dir = Path('C:/Windows/Fonts')
+          font_dir.mkdir(parents=True, exist_ok=True)
+          shutil.copy('/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf', font_dir / 'times.ttf')
+          PY
+
+      - name: Build dedicated wrist AR GLB
+        run: |
+          python tools/build_ar.py
+          mv iarone_watch_ar.glb iarone-watch-ar.glb
+
+      - name: Commit generated wrist model
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f iarone-watch-ar.glb
+          if git diff --cached --quiet; then
+            echo "wear model unchanged"
+            exit 0
+          fi
+          git commit -m "build: regenerate wrist AR model"
+
+          # Other AR/runtime commits can land while this relatively slow model build
+          # is running. Rebase the generated binary commit onto the newest branch
+          # head instead of rejecting it as a non-fast-forward push.
+          git fetch origin "${GITHUB_REF_NAME}"
+          git rebase "origin/${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
