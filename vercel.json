@@ -4,11 +4,11 @@
   "rewrites": [
     {
       "source": "/ar",
-      "destination": "/ar-v2.html"
+      "destination": "/ar-v3.html"
     },
     {
       "source": "/ar.html",
-      "destination": "/ar-v2.html"
+      "destination": "/ar-v3.html"
     }
   ],
   "headers": [
