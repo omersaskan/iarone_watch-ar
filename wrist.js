@@ -63,23 +63,51 @@ export class WristAnchor {
 }
 
 /**
- * Resolve the sign ambiguity in the metric world landmarks.
- * MediaPipe world landmarks are metric but their z axis direction is not worth
- * trusting blind, so we cross-check against a purely 2-D cue: the winding of
- * (wrist, index MCP, pinky MCP) in image space says unambiguously whether we are
- * looking at the back of the hand or the palm.
- *
- * Derivation (image coords: x right, y DOWN).  Anatomical position: the thumb is
- * the lateral digit, so a RIGHT hand held palm-to-camera shows its thumb on the
- * image LEFT.  Then index MCP is left of pinky MCP and both sit above the wrist:
- *   cz = (-)(-) - (-)(+) > 0.
- * So cz > 0 means the PALM faces the camera for a right hand.  Getting this
- * backwards puts the dial on the inside of the wrist.
+ * Which side of the (wrist -> middle MCP) axis the thumb sits on, in image
+ * space.  Sign of the 2-D cross product of (axis) x (wrist -> thumb MCP):
+ * positive = thumb on one side, negative = the other.  This is the one cue
+ * that does not care what the detector *calls* the hand.
  */
-export function dorsalFacesCameraFromImage(lm, isRight) {
-  const p0 = lm[IDX.WRIST], p5 = lm[IDX.INDEX_MCP], p17 = lm[IDX.PINKY_MCP];
-  const cz = (p5.x - p0.x) * (p17.y - p0.y) - (p5.y - p0.y) * (p17.x - p0.x);
-  return isRight ? cz < 0 : cz > 0;
+export function thumbSide(lm) {
+  const p0 = lm[IDX.WRIST], p9 = lm[IDX.MIDDLE_MCP], p2 = lm[IDX.THUMB_MCP];
+  return (p9.x - p0.x) * (p2.y - p0.y) - (p9.y - p0.y) * (p2.x - p0.x);
+}
+
+/**
+ * Is this the back of the hand (dorsal) facing the camera?  Decided from the
+ * landmarks, WITHOUT the detector's left/right label.
+ *
+ * In 2-D the thumb's side and the (index, pinky) winding always carry the
+ * same bit, so a right palm and a left back of hand are the same image: no
+ * planar cue tells palm from dorsal.  Depth does.  Measured on the synthetic
+ * hand (demoHand, built in metres and projected with the real camera) and
+ * matching MediaPipe's convention: seen from the BACK of the hand the thumb
+ * tip is NEARER the camera than the wrist (it protrudes from the hand's
+ * edge toward the viewer); seen from the palm it is farther.
+ *
+ * MediaPipe world landmarks: z metric, + = away from the camera.  Image
+ * landmarks: z relative to the wrist, same sign convention.  Both are used
+ * when present; the metric one decides.
+ */
+export function dorsalFacesCameraFromImage(lm, world = null) {
+  if (world && world.length > IDX.THUMB_TIP) {
+    const zW = world[IDX.THUMB_TIP].z - world[IDX.WRIST].z;    // + = thumb farther than the wrist
+    if (Math.abs(zW) > 1e-4) return zW < 0;                     // nearer => dorsal
+  }
+  const zImg = lm[IDX.THUMB_TIP].z - lm[IDX.WRIST].z;
+  return zImg < 0;
+}
+
+/**
+ * Right or left hand, from geometry rather than the detector's label (which
+ * is mirrored on a front camera and often wrong on a back one).  Given the
+ * dorsal/palm decision: on the back of a RIGHT hand the thumb is on the image
+ * RIGHT of the wrist->middle axis (y down), on its palm the image LEFT; a left
+ * hand is the mirror.
+ */
+export function isRightHandFromImage(lm, dorsal) {
+  const onImageRight = thumbSide(lm) > 0;
+  return dorsal ? onImageRight : !onImageRight;
 }
 
 /**
@@ -87,9 +115,12 @@ export function dorsalFacesCameraFromImage(lm, isRight) {
  * opts: { anchor: WristAnchor, depthFilter: DepthFilter }
  * Returns {quaternion, position, ...} or null when the pose is unusable.
  */
-export function wristPose(lm, world, isRight, cam, viewW, viewH, opts = {}) {
+export function wristPose(lm, world, isRightLabel, cam, viewW, viewH, opts = {}) {
   if (!lm || !world || lm.length < 21 || world.length < 21) return null;
-  const dorsalToCam = dorsalFacesCameraFromImage(lm, isRight);
+  // the detector's label is mirrored on a front camera and unreliable on a
+  // back one; decide the face and the hand from the landmarks themselves
+  const dorsalToCam = dorsalFacesCameraFromImage(lm, world);
+  const isRight = opts.trustLabel ? isRightLabel : isRightHandFromImage(lm, dorsalToCam);
 
   // try both z conventions for the metric landmarks and keep the one that agrees
   let best = null;
@@ -144,7 +175,7 @@ export function wristPose(lm, world, isRight, cam, viewW, viewH, opts = {}) {
     .addScaledVector(u, -FIT.alongForearm)      // slide back down the forearm
     .addScaledVector(ey, FIT.outOfWrist);       // lift onto the skin
 
-  return { quaternion, position, wrist, ex, ey, ez, u, depth, handW, dorsalToCam };
+  return { quaternion, position, wrist, ex, ey, ez, u, depth, handW, dorsalToCam, isRight };
 }
 
 /** EMA depth filter with a spike clamp: depth is the noisiest axis by far. */
@@ -282,7 +313,8 @@ export function demoHand(t = 0, isRight = true, palmToCam = false, cam = null,
   const th = Math.tan(vfov / 2);
   const lm = camPts.map(p => {
     const d = -p.z;
-    return { x: (p.x / (th * aspect * d) + 1) / 2, y: (1 - p.y / (th * d)) / 2, z: p.z + dist };
+    // z: MediaPipe convention, relative depth with + = away from the camera
+    return { x: (p.x / (th * aspect * d) + 1) / 2, y: (1 - p.y / (th * d)) / 2, z: -(p.z + dist) };
   });
   // MediaPipe world landmarks: metric, origin at the hand centre, y down, z away
   const world = centred.map(p => ({ x: p.x, y: -p.y, z: -p.z }));
