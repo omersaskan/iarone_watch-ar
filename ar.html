@@ -121,6 +121,7 @@ import { wristPose, PoseFilter, DepthFilter, TrackingState, WristAnchor,
 import { WristEllipse, measureWrist, createWristSegmenter, skinMask, effectiveEllipse,
          WRIST_PRIOR } from './wristfit.js';
 import { LiveStrap } from './strap.js';
+import { armProfile, ArmProfileFilter, ArmOccluder } from './armocc.js';
 
 const q = new URLSearchParams(location.search);
 const DEMO = q.get('demo') === '1';
@@ -190,6 +191,12 @@ const occGroup = new THREE.Group();
 occGroup.add(occluder, occCap);
 occluder.renderOrder = -10; occCap.renderOrder = -10;
 rig.add(occGroup);
+// the mask-shaped forearm (armocc.js) replaces the cylinder whenever a fresh
+// profile is readable off the body-skin mask; ?occ=0 keeps the cylinder
+const USE_ARMOCC = q.get('occ') !== '0';
+const armOcc = new ArmOccluder(occMat);
+const armProf = new ArmProfileFilter();
+rig.add(armOcc.group);
 
 // The rig origin is the dial plane.  Put a pivot at the wrist centre so the
 // "roll" control spins the watch AROUND the forearm instead of around its dial.
@@ -270,7 +277,7 @@ const poseOpts = { anchor, depthFilter, flipSide: false, crownToElbow: false };
 let wasLost = true;
 function resetTracking() {
   filter.reset(); depthFilter.reset(); anchor.reset(); tracking.reset();
-  wristEst.reset(); applyFit();
+  wristEst.reset(); armProf.reset(); armOcc.fallback(); applyFit();
 }
 
 // Rig frame: +X = forearm (hand at +X), +Y = out of the back of the wrist.
@@ -316,6 +323,8 @@ function applyFit() {
     liveStrap.mesh.position.set(0, FIT.outOfWrist, 0);
   }
   occGroup.position.set(0, -FIT.outOfWrist, 0);
+  armOcc.group.position.set(0, -FIT.outOfWrist, 0);
+  occluder.visible = !armOcc.active; occCap.visible = !armOcc.active;
   const len = ARM.hand + ARM.elbow;
   // scale is applied before the rotation: (X radius, height, Z radius);
   // rotZ(90) sends the cylinder axis Y -> X, its X radius -> Y, Z radius stays Z
@@ -418,6 +427,12 @@ function loop() {
           if (cm) {
             const mask = skinMask(cm);
             const mw = measureWrist(measured, res.landmarks[0], mask, cm.width, cm.height);
+            if (USE_ARMOCC && mw) {
+              const prof = armProfile(mask, cm.width, cm.height, res.landmarks[0], mw.mPerPx);
+              const sm = armProf.push(prof);
+              if (sm) armOcc.update(sm); else armOcc.fallback();
+              occluder.visible = !armOcc.active; occCap.visible = !armOcc.active;
+            }
             cm.close();
             const prev = wristEst.value();
             const now = wristEst.push(mw);
@@ -469,7 +484,8 @@ function loop() {
         + (e ? `\nbilek ${(2 * e.across * 1000).toFixed(1)}x${(2 * e.thick * 1000).toFixed(1)} mm (${e.source}` +
                (e.confidence ? ` ${(e.confidence * 100).toFixed(0)}%` : '') + ')' : '')
         + (wrap != null ? `\nsarma hatası ${wrap.toFixed(2)} mm` : '')
-        + (strapProfile ? `\nkayış: Lab profili ${strapProfile.arc_length_mm} mm` : '');
+        + (strapProfile ? `\nkayış: Lab profili ${strapProfile.arc_length_mm} mm` : '')
+        + `\nkol: ${armOcc.active ? 'maske silüeti' : 'elips silindir'}`;
     }
   }
 }
@@ -586,6 +602,8 @@ window.__step = (t, opts = {}) => {
   setWatchOpacity(1);
   // opts.wrist = {across, thick} (metres) feeds the live strap as if measured
   if (opts.wrist) { for (let i = 0; i < 10; i++) wristEst.push({ ...opts.wrist, confidence: 1 }); }
+  // opts.armProfile = {stations, halfWidth, centreShift, n} (metres) shapes the occluder as if read off a mask
+  if (opts.armProfile) { armProf.reset(); armOcc.update(armProf.push(opts.armProfile)); } else armOcc.fallback();
   applyFit();
   // opts.palm === true puts the palm toward the camera; the default is the back
   // of the hand, which is the side a watch is actually worn on
@@ -599,7 +617,7 @@ window.__step = (t, opts = {}) => {
   renderer.render(scene, camera);
   return sm ? { p: sm.position.toArray(), depth: pose.depth, hand: pose.handW,
                 ellipse: lastEllipse, wrapErrorMm: liveStrap.mesh.visible ? liveStrap.clearanceError() : null,
-                strapHidden: liveStrap.hidden.length } : null;
+                strapHidden: liveStrap.hidden.length, armOcc: armOcc.active } : null;
 };
 window.__save = async (name) => {
   const w = stage.clientWidth, h = stage.clientHeight;

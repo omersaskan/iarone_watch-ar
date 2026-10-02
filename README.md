@@ -26,6 +26,7 @@ python -m http.server 8080     # -> http://localhost:8080
 | `?dbg=1` | Poz / derinlik / ölçülen bilek / sarma hatası |
 | `?wrap=0` | Canlı kayış sarma kapalı (GLB'nin kendi kayışı) |
 | `?seg=0` | Bilek segmentasyonu kapalı (önsel + kaydırıcı) |
+| `?occ=0` | Maske silüetli örtme kapalı (elips silindir) |
 | `?manifest=<url>` | Lab raporu: `strap_profile` ve `wrist_fit` |
 | `?hand=left`, `?palm=1`, `?pose=still\|tilt\|turn` | demo varyantları |
 
@@ -95,6 +96,19 @@ Lab'den gelen bir saat için `?m=<glb>&manifest=<lab_report.json>` verin:
 uzunluğu), `result.wrist_fit` kasanın yüksekliğini getirir; viewer GLB'deki
 kayışı gizler ve profili sarar. `?wrap=0` canlı sarmayı, `?seg=0` segmentasyonu
 kapatır.
+
+## Kol silüeti ile örtme (C)
+
+Kayışın arkası ve dönüşte kasa, sabit bir elips silindirin değil **kolun
+gerçek silüetinin** arkasında kaybolur (`armocc.js`). A'nın ürettiği deri
+maskesinden kol boyunca dokuz istasyonda genişlik okunur (bilekte dar, dirseğe
+doğru genişleyen, ulna çıkıntısı dahil, kolun kendi ekseni kayıyorsa onu
+izleyerek), metrik ölçekle metreye çevrilir ve yalnız derinlik yazan bir tüp
+bu profilden geçirilir. Maske her karede güncel olduğu için bilek döndükçe
+kolun değişen silüeti örtmeye anında yansır — "bir karede havada, sonrakinde
+yutulmuş" titremesi kalkar. Maske okunamıyorsa (kol kadrajda değil, kol
+giysili) elips silindire düşer. `?occ=0` kapatır; `?dbg=1` hangisinin aktif
+olduğunu gösterir ("kol: maske silüeti / elips silindir").
 
 ## Kalibrasyon
 
