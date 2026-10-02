@@ -1,0 +1,8 @@
+{
+  "name": "iarone-watch-ar",
+  "private": true,
+  "type": "module",
+  "description": "IARONE watch: 3D viewer + wrist AR try-on (static site, no build). `npm test` checks the strap-wrap and wrist-measurement maths without a browser.",
+  "scripts": { "test": "node --test tests/*.test.mjs" },
+  "imports": { "#three": "./vendor/three/build/three.module.js" }
+}

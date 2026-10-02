@@ -108,19 +108,32 @@
 
 <script type="importmap">
 { "imports": { "three":"./vendor/three/build/three.module.js",
+               "#three":"./vendor/three/build/three.module.js",
                "three/addons/":"./vendor/three/examples/jsm/" } }
 </script>
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { HandLandmarker, FilesetResolver } from './vendor/tasks-vision/vision_bundle.mjs';
+import * as Vision from './vendor/tasks-vision/vision_bundle.mjs';
 import { wristPose, PoseFilter, DepthFilter, TrackingState, WristAnchor,
          FIT, demoHand } from './wrist.js';
+import { WristEllipse, measureWrist, createWristSegmenter, skinMask, effectiveEllipse,
+         WRIST_PRIOR } from './wristfit.js';
+import { LiveStrap } from './strap.js';
+import { armProfile, ArmProfileFilter, ArmOccluder } from './armocc.js';
 
 const q = new URLSearchParams(location.search);
 const DEMO = q.get('demo') === '1';
 const DBG = q.get('dbg') === '1';
 const MODEL_URL = q.get('m') || './iarone-watch-v1.glb';
+// Lab manifest (lab_report.json or the API status response) carrying
+// result.strap_profile / result.wrist_fit for a pipeline-made watch
+const MANIFEST_URL = q.get('manifest') || '';
+// ?wrap=0 keeps the GLB's baked strap (no live sweep); ?seg=0 disables the segmenter
+const LIVE_WRAP = q.get('wrap') !== '0';
+const USE_SEG = q.get('seg') !== '0';
+const SEG_MODEL = './models/selfie_multiclass_256x256.tflite';
 
 const video = document.getElementById('cam');
 const canvas = document.getElementById('gl');
@@ -178,6 +191,12 @@ const occGroup = new THREE.Group();
 occGroup.add(occluder, occCap);
 occluder.renderOrder = -10; occCap.renderOrder = -10;
 rig.add(occGroup);
+// the mask-shaped forearm (armocc.js) replaces the cylinder whenever a fresh
+// profile is readable off the body-skin mask; ?occ=0 keeps the cylinder
+const USE_ARMOCC = q.get('occ') !== '0';
+const armOcc = new ArmOccluder(occMat);
+const armProf = new ArmProfileFilter();
+rig.add(armOcc.group);
 
 // The rig origin is the dial plane.  Put a pivot at the wrist centre so the
 // "roll" control spins the watch AROUND the forearm instead of around its dial.
@@ -201,9 +220,40 @@ loader.load(MODEL_URL, g => {
     o.material = o.material.clone();
     mats.push({ m: o.material, transparent: o.material.transparent, opacity: o.material.opacity });
   });
+  mats.push({ m: strapMat, transparent: false, opacity: 1 });
   watchHolder.add(watch);
+  enableLiveStrap();
   applyFit();
 }, undefined, e => { hint.textContent = 'Model yüklenemedi: ' + e; });
+
+// --- the live strap: swept each frame around the wrist that was measured
+const strapMat = new THREE.MeshStandardMaterial({ color: 0x2a1c16, roughness: 0.72, metalness: 0.0 });
+const liveStrap = new LiveStrap(strapMat, null, {});
+liveStrap.mesh.visible = false;
+let strapProfile = null, wristFit = null;
+if (MANIFEST_URL) {
+  fetch(MANIFEST_URL).then(r => r.json()).then(j => {
+    const res = (j && (j.result || (j.lab_summary ? j.lab_summary : null))) || j || {};
+    strapProfile = res.strap_profile || (j.lab_summary && j.lab_summary.strap_profile) || null;
+    wristFit = res.wrist_fit || (j.lab_summary && j.lab_summary.wrist_fit) || null;
+    if (strapProfile) liveStrap.profile = strapProfile;
+    if (wristFit && isFinite(wristFit.out_of_wrist)) {
+      // the Lab measured this watch's head height: use it unless the user calibrated
+      if (!localStorage.getItem('iarone-fit')) { CAL.out = Math.round(wristFit.out_of_wrist * 1000 * 10) / 10; }
+    }
+    liveStrap.last = null;   // re-sweep with the real profile
+    applyFit();
+  }).catch(e => console.warn('manifest not loaded:', e));
+}
+function enableLiveStrap() {
+  if (!LIVE_WRAP || !watch) return;
+  const hidden = liveStrap.takeOverFrom(watch);
+  // a strap material from the GLB keeps the leather's own texture/colour
+  const src = liveStrap.hidden.find(o => o.material && o.material.map);
+  if (src) { liveStrap.mesh.material = src.material; }
+  liveStrap.mesh.visible = hidden > 0 || !!strapProfile;
+  armPivot.add(liveStrap.mesh);
+}
 
 let curOpacity = 1;
 function setWatchOpacity(v) {
@@ -227,6 +277,7 @@ const poseOpts = { anchor, depthFilter, flipSide: false, crownToElbow: false };
 let wasLost = true;
 function resetTracking() {
   filter.reset(); depthFilter.reset(); anchor.reset(); tracking.reset();
+  wristEst.reset(); armProf.reset(); armOcc.fallback(); applyFit();
 }
 
 // Rig frame: +X = forearm (hand at +X), +Y = out of the back of the wrist.
@@ -236,20 +287,44 @@ function resetTracking() {
 const ARM = { across: 0.0285, thick: 0.0215, hand: 0.052, elbow: 0.26 };
 const DEF = { along: 30, out: 26.8, arm: 1.00, roll: 0, scale: 1.00, flip: false, crownElbow: false };
 let CAL = Object.assign({}, DEF);
+// per-frame wrist measurement (wristfit.js); the slider is the fallback
+const wristEst = new WristEllipse();
+let lastEllipse = null;
+let segmenter = null, segFrame = 0;
 try { Object.assign(CAL, JSON.parse(localStorage.getItem('iarone-fit') || '{}')); } catch (e) {}
 
+// The watch's own height: dial plane above the skin under the caseback
+// (strap clearance + caseback->dial). CAL.out is the sample's full
+// wrist-centre->dial distance (26.8 = 21.5 half wrist + 2.6 strap + 2.7 head);
+// what stays constant across wrists is the HEAD part, so it is derived once
+// from the sample wrist and re-added to whatever wrist is measured.
+const HEAD_ABOVE_SKIN_M = () => CAL.out / 1000 - WRIST_PRIOR.thick;
 function applyFit() {
   poseOpts.flipSide = !!CAL.flip;
   poseOpts.crownToElbow = !!CAL.crownElbow;
   FIT.alongForearm = CAL.along / 1000;
-  FIT.outOfWrist = CAL.out / 1000;
+  const ell = effectiveEllipse(wristEst.value(), CAL.arm);
+  lastEllipse = ell;
+  // out-of-wrist follows the measured wrist: a thicker arm lifts the watch
+  FIT.outOfWrist = ell.thick + HEAD_ABOVE_SKIN_M();
   armPivot.position.set(0, -FIT.outOfWrist, 0);
   armPivot.rotation.set(THREE.MathUtils.degToRad(CAL.roll), 0, 0);  // spin about the forearm (X)
   watchHolder.position.set(0, FIT.outOfWrist, 0);
   if (watch) watch.scale.setScalar(CAL.scale);
 
-  const across = ARM.across * CAL.arm, thick = ARM.thick * CAL.arm;
+  const across = ell.across, thick = ell.thick;
+  // the live strap is a child of armPivot, whose origin is the WRIST CENTRE;
+  // in strap.js' build frame the path is written relative to the dial plane
+  // with skin_top below it, so from the wrist centre the skin top is +thick
+  // and the dial plane sits at +outOfWrist: pass skin_top = thick - outOfWrist
+  // (negative, dial-plane relative) and shift the mesh up by outOfWrist.
+  if (liveStrap.mesh.visible) {
+    liveStrap.update({ across, thick }, thick - FIT.outOfWrist);
+    liveStrap.mesh.position.set(0, FIT.outOfWrist, 0);
+  }
   occGroup.position.set(0, -FIT.outOfWrist, 0);
+  armOcc.group.position.set(0, -FIT.outOfWrist, 0);
+  occluder.visible = !armOcc.active; occCap.visible = !armOcc.active;
   const len = ARM.hand + ARM.elbow;
   // scale is applied before the rotation: (X radius, height, Z radius);
   // rotZ(90) sends the cylinder axis Y -> X, its X radius -> Y, Z radius stays Z
@@ -287,6 +362,10 @@ async function initTracker() {
     minHandPresenceConfidence: 0.55,
     minTrackingConfidence: 0.55,
   });
+  if (USE_SEG && LIVE_WRAP) {
+    segmenter = await createWristSegmenter(Vision, './vendor/tasks-vision/wasm', SEG_MODEL);
+    if (!segmenter) console.info('wrist segmenter not deployed: using the anatomical prior / slider');
+  }
 }
 
 let lastVideoTime = -1, frames = 0, t0 = performance.now();
@@ -339,6 +418,28 @@ function loop() {
       measured = wristPose(mapLandmarks(res.landmarks[0]), res.worldLandmarks[0],
                            cat === 'Right', camera, stage.clientWidth, stage.clientHeight, poseOpts);
       info = cat + (measured ? ' d=' + measured.depth.toFixed(2) + 'm' : ' (poz yok)');
+      // the wrist's width from the body-skin mask, every other frame (the
+      // segmenter costs ~as much as the hand tracker)
+      if (segmenter && measured && (segFrame++ & 1) === 0) {
+        try {
+          const seg = segmenter.segmentForVideo(video, performance.now());
+          const cm = seg.categoryMask;
+          if (cm) {
+            const mask = skinMask(cm);
+            const mw = measureWrist(measured, res.landmarks[0], mask, cm.width, cm.height);
+            if (USE_ARMOCC && mw) {
+              const prof = armProfile(mask, cm.width, cm.height, res.landmarks[0], mw.mPerPx);
+              const sm = armProf.push(prof);
+              if (sm) armOcc.update(sm); else armOcc.fallback();
+              occluder.visible = !armOcc.active; occCap.visible = !armOcc.active;
+            }
+            cm.close();
+            const prev = wristEst.value();
+            const now = wristEst.push(mw);
+            if (now && (!prev || Math.abs(now.across - prev.across) > 0.0003)) applyFit();
+          }
+        } catch (e) { /* a bad frame never stops the loop */ }
+      }
     } else {
       info = 'el yok';
     }
@@ -376,7 +477,16 @@ function loop() {
   if (frames % 20 === 0) {
     const el = (performance.now() - t0) / 1000;
     document.getElementById('fps').textContent = (frames / el).toFixed(0) + ' fps';
-    if (DBG) dbgEl.textContent = info + '\n' + (sm ? 'p ' + sm.position.toArray().map(v => v.toFixed(3)).join(' ') : 'yok');
+    if (DBG) {
+      const e = lastEllipse;
+      const wrap = liveStrap.mesh.visible ? liveStrap.clearanceError() : null;
+      dbgEl.textContent = info + '\n' + (sm ? 'p ' + sm.position.toArray().map(v => v.toFixed(3)).join(' ') : 'yok')
+        + (e ? `\nbilek ${(2 * e.across * 1000).toFixed(1)}x${(2 * e.thick * 1000).toFixed(1)} mm (${e.source}` +
+               (e.confidence ? ` ${(e.confidence * 100).toFixed(0)}%` : '') + ')' : '')
+        + (wrap != null ? `\nsarma hatası ${wrap.toFixed(2)} mm` : '')
+        + (strapProfile ? `\nkayış: Lab profili ${strapProfile.arc_length_mm} mm` : '')
+        + `\nkol: ${armOcc.active ? 'maske silüeti' : 'elips silindir'}`;
+    }
   }
 }
 
@@ -490,6 +600,10 @@ window.__step = (t, opts = {}) => {
   running = false;
   resetTracking();
   setWatchOpacity(1);
+  // opts.wrist = {across, thick} (metres) feeds the live strap as if measured
+  if (opts.wrist) { for (let i = 0; i < 10; i++) wristEst.push({ ...opts.wrist, confidence: 1 }); }
+  // opts.armProfile = {stations, halfWidth, centreShift, n} (metres) shapes the occluder as if read off a mask
+  if (opts.armProfile) { armProf.reset(); armOcc.update(armProf.push(opts.armProfile)); } else armOcc.fallback();
   applyFit();
   // opts.palm === true puts the palm toward the camera; the default is the back
   // of the hand, which is the side a watch is actually worn on
@@ -501,7 +615,9 @@ window.__step = (t, opts = {}) => {
   if (sm) { rig.position.copy(sm.position); rig.quaternion.copy(sm.quaternion); rig.visible = true; }
   else rig.visible = false;
   renderer.render(scene, camera);
-  return sm ? { p: sm.position.toArray(), depth: pose.depth, hand: pose.handW } : null;
+  return sm ? { p: sm.position.toArray(), depth: pose.depth, hand: pose.handW,
+                ellipse: lastEllipse, wrapErrorMm: liveStrap.mesh.visible ? liveStrap.clearanceError() : null,
+                strapHidden: liveStrap.hidden.length, armOcc: armOcc.active } : null;
 };
 window.__save = async (name) => {
   const w = stage.clientWidth, h = stage.clientHeight;
