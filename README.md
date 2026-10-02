@@ -23,7 +23,10 @@ python -m http.server 8080     # -> http://localhost:8080
 |---|---|
 | `?demo=1` | Gerçek kamera yerine sentetik el; kamerasız test |
 | `?arm=1` | Kol silindirini görünür yapar (hizalama kontrolü) |
-| `?dbg=1` | Poz / derinlik bilgisi |
+| `?dbg=1` | Poz / derinlik / ölçülen bilek / sarma hatası |
+| `?wrap=0` | Canlı kayış sarma kapalı (GLB'nin kendi kayışı) |
+| `?seg=0` | Bilek segmentasyonu kapalı (önsel + kaydırıcı) |
+| `?manifest=<url>` | Lab raporu: `strap_profile` ve `wrist_fit` |
 | `?hand=left`, `?palm=1`, `?pose=still\|tilt\|turn` | demo varyantları |
 
 ## Model
@@ -65,6 +68,33 @@ halka kola dik bir düzlemde olduğuna göre 12–6 ekseni de kola diktir. Saat�
 
 "Saat 12 ele bakar" sezgisi yanıltıcıdır — o, saati okurken bileği çevirdiğimiz için
 oluşur. Bu yüzden modelde kol `+X` eksenidir.
+
+## Bilek ölçümü ve canlı kayış (A+B)
+
+Kayış artık sabit bir mesh değil: **ölçülen bileğin** etrafına her karede yeniden
+sarılır (`strap.js`), böylece ince bilekte boşluk, kalın bilekte gömülme olmaz.
+Kabul ölçütü: kayışın iç yüzü ile deri arasındaki boşluk tasarım payından
+(1,35 mm) en fazla **2 mm** sapar — `npm test` bunu altı bilek boyunda sınar,
+`?dbg=1` canlı değeri gösterir ("sarma hatası").
+
+Bilek kesiti (`wristfit.js`) iki kaynaktan gelir:
+
+1. **El takibi** zaten elin metrik genişliğini verir (mm/piksel ölçeği).
+2. **Vücut/deri segmentasyonu** (MediaPipe `ImageSegmenter`) kolun silüetini
+   verir; bilek çizgisi boyunca maskenin piksel genişliği × ölçek = bileğin
+   gerçek genişliği. Kalınlık anatomik oranla (21,5/28,5) türetilir; el yan
+   döndükçe görünen genişlik kalınlığa yaklaşır, karışım el sırtı normaline göre.
+
+Segmentasyon modeli repoya dahil değildir (16 MB). Etkinleştirmek için
+[selfie_multiclass_256x256.tflite](https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite)
+dosyasını `models/` altına koyun. Yoksa sayfa anatomik önsel + "Bilek çevresi"
+kaydırıcısına düşer; hiçbir şey bozulmaz.
+
+Lab'den gelen bir saat için `?m=<glb>&manifest=<lab_report.json>` verin:
+`result.strap_profile` kayışın gerçek kesitini (genişlik/kalınlık, ark
+uzunluğu), `result.wrist_fit` kasanın yüksekliğini getirir; viewer GLB'deki
+kayışı gizler ve profili sarar. `?wrap=0` canlı sarmayı, `?seg=0` segmentasyonu
+kapatır.
 
 ## Kalibrasyon
 

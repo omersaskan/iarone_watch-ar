@@ -10,7 +10,7 @@
 // watch's 3-9 (crown) axis = model +X.  The lugs are separated ACROSS the wrist,
 // not along it.  Everything else follows from that.
 
-import * as THREE from 'three';
+import * as THREE from '#three';
 
 export const IDX = {
   WRIST: 0,
